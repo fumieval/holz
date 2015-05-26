@@ -19,6 +19,6 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Graphics.Holz.System, Graphics.Holz.Input, Graphics.Holz.Font, Graphics.Holz.Bitmap, Graphics.Holz
   other-extensions:    DeriveDataTypeable, DeriveFunctor, DeriveFoldable, DeriveTraversable
-  build-depends:       base, control-bool, lens, bytestring, text, vector, transformers, template-haskell, hashable, directory, filepath, random, gl, GLFW-b, boundingboxes, linear, JuicyPixels, freetype2, reflection
+  build-depends:       base, lens, bytestring, text, vector, transformers, template-haskell, hashable, directory, filepath, random, gl, GLFW-b, boundingboxes, linear, JuicyPixels, freetype2, reflection
   hs-source-dirs:      src
   default-language:    Haskell2010

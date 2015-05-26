@@ -98,7 +98,10 @@ withHolz windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) m = do
   let title = ""
       ww = floor $ x1 - x0
       wh = floor $ y1 - y0
-  () <- unlessM GLFW.init (fail "Failed to initialize")
+
+  GLFW.init >>= \r -> case r of
+    False -> fail "Failed to initialize"
+    True -> return ()
 
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
   GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 2
