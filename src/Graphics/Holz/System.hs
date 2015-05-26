@@ -11,6 +11,11 @@ module Graphics.Holz.System (System
   , releaseVertex
   , setProjection
   , drawVertex
+  -- * Input
+  , linkKeyboard
+  , linkMouseButton
+  , linkMouseCursor
+  , linkMouseScroll
   -- * Misc
   , takeScreenshot
   , setTitle
@@ -19,6 +24,7 @@ module Graphics.Holz.System (System
   , hideCursor
   , getBoundingBox
   , setBoundingBox
+  , windowShouldClose
   ) where
 
 import Codec.Picture
@@ -45,6 +51,7 @@ import Graphics.GL.Ext.EXT.TextureFilterAnisotropic
 import Graphics.Holz.Input
 import Graphics.Holz.Bitmap as Bitmap
 import Data.Reflection
+import Control.Applicative
 
 data System = System
   { refRegion :: IORef (Box V2 Float)
@@ -58,18 +65,32 @@ data System = System
   , mouseScrollHandlers :: IORef (V2 Float -> IO ())
   }
 
+linkKeyboard :: Given System => (Chatter Key -> IO ()) -> IO ()
+linkKeyboard f = modifyIORef (keyboardHandlers given) (liftA2 (>>) f)
+
+linkMouseButton :: Given System => (Chatter Int -> IO ()) -> IO ()
+linkMouseButton f = modifyIORef (mouseButtonHandlers given) (liftA2 (>>) f)
+
+linkMouseCursor :: Given System => (V2 Float -> IO ()) -> IO ()
+linkMouseCursor f = modifyIORef (mouseCursorHandlers given) (liftA2 (>>) f)
+
+linkMouseScroll :: Given System => (V2 Float -> IO ()) -> IO ()
+linkMouseScroll f = modifyIORef (mouseScrollHandlers given) (liftA2 (>>) f)
+
 data PrimitiveMode = Triangles | TriangleFan | TriangleStrip | LineStrip | LineLoop
 
 data WindowMode = FullScreen | Resizable | Windowed deriving (Show, Eq, Ord)
 
-withFrame :: Given System => IO a -> IO (Bool, a)
+windowShouldClose :: Given System => IO Bool
+windowShouldClose = GLFW.windowShouldClose (theWindow given)
+
+withFrame :: Given System => IO a -> IO a
 withFrame m = do
   glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
   a <- m
   GLFW.swapBuffers $ theWindow given
   GLFW.pollEvents
-  b <- GLFW.windowShouldClose (theWindow given)
-  return (b, a)
+  return a
 
 withHolz :: WindowMode -> Box V2 Float -> (Given System => IO a) -> IO a
 withHolz windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) m = do

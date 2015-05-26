@@ -10,7 +10,7 @@ license:             BSD3
 license-file:        LICENSE
 author:              Fumiaki Kinoshita
 maintainer:          fumiexcel@gmail.com
--- copyright:
+copyright:           Copyright (c) 2015 Fumiaki Kinoshita
 category:            Graphics
 build-type:          Simple
 -- extra-source-files:
@@ -18,7 +18,6 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Graphics.Holz.System, Graphics.Holz.Input, Graphics.Holz.Font, Graphics.Holz.Bitmap, Graphics.Holz
-  -- other-modules:
   other-extensions:    DeriveDataTypeable, DeriveFunctor, DeriveFoldable, DeriveTraversable
   build-depends:       base, control-bool, lens, bytestring, text, vector, transformers, template-haskell, hashable, directory, filepath, random, gl, GLFW-b, boundingboxes, linear, JuicyPixels, freetype2, reflection
   hs-source-dirs:      src
