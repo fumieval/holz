@@ -2,10 +2,14 @@
 module Graphics.Holz.System (System
   , withFrame
   , withHolz
+  , WindowMode(..)
   -- * Graphic
   , Texture
   , registerTexture
+  , registerTextures
   , releaseTexture
+  , Vertex(..)
+  , PrimitiveMode(..)
   , VertexBuffer
   , registerVertex
   , releaseVertex
@@ -46,6 +50,7 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified GHC.IO.Encoding as Encoding
 import qualified Graphics.UI.GLFW as GLFW
+import qualified Data.HashMap.Strict as HM
 import Graphics.GL
 import Graphics.GL.Ext.EXT.TextureFilterAnisotropic
 import Graphics.Holz.Input
@@ -214,7 +219,6 @@ align1 = sizeOf (undefined :: V3 Float)
 align2 :: Int
 align2 = align1 + sizeOf (undefined :: V2 Float)
 
-
 instance Storable Vertex where
   sizeOf _ = sizeOf (undefined :: V3 Float) + sizeOf (undefined :: V2 Float) + sizeOf (undefined :: V3 Float)
   {-# INLINE sizeOf #-}
@@ -239,7 +243,10 @@ data VertexBuffer = VertexBuffer !GLuint !GLuint !GLenum !GLsizei
 data Texture = Texture !GLuint
 
 registerTexture :: Image PixelRGBA8 -> IO Texture
-registerTexture (Image w h vec) = do
+registerTexture img@(Image w h vec) = registerTextures (V2 w h) [(V2 0 0, img)]
+
+registerTextures :: V2 Int -> [(V2 Int, Image PixelRGBA8)] -> IO Texture
+registerTextures sw sh imgs = do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
@@ -252,13 +259,15 @@ registerTexture (Image w h vec) = do
   glPixelStorei GL_UNPACK_SKIP_PIXELS 0
   glPixelStorei GL_UNPACK_SKIP_ROWS 0
   glPixelStorei GL_UNPACK_SWAP_BYTES 0
-  let level = floor $ logBase (2 :: Float) $ fromIntegral (max w h)
-  glTexStorage2D GL_TEXTURE_2D level GL_SRGB8 (fromIntegral w) (fromIntegral h)
+  let level = floor $ logBase (2 :: Float) $ fromIntegral (max sw sh)
+  glTexStorage2D GL_TEXTURE_2D level GL_SRGB8 (fromIntegral sw) (fromIntegral sh)
 
   when gl_EXT_texture_filter_anisotropic
     $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 8
 
-  V.unsafeWith vec $ glTexSubImage2D GL_TEXTURE_2D 0 0 0 (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE . castPtr
+  forM_ imgs $ \(V2 x y, Image w h vec) -> V.unsafeWith vec
+    $ glTexSubImage2D GL_TEXTURE_2D 0 x y (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE
+    . castPtr
 
   glGenerateMipmap GL_TEXTURE_2D
 
