@@ -13,7 +13,6 @@ import Control.Monad
 import Data.BoundingBox
 import qualified Data.Vector.Storable as V
 import Linear
-import Graphics.Holz.Bitmap
 import Graphics.Rendering.FreeType.Internal
 import qualified Graphics.Rendering.FreeType.Internal.GlyphSlot as GS
 import qualified Graphics.Rendering.FreeType.Internal.Vector as V
@@ -71,7 +70,7 @@ freeType = unsafePerformIO $ alloca $ \p -> do
   runFreeType $ ft_Init_FreeType p
   peek p
 
-renderChar :: Font -> Float -> Char -> IO (Bitmap, V2 Float, V2 Float)
+renderChar :: Font -> Float -> Char -> IO (Image PixelRGBA8, V2 Float, V2 Float)
 renderChar (Font face _ _) pixel ch = do
   let dpi = 300
 
@@ -93,7 +92,7 @@ renderChar (Font face _ _) pixel ch = do
   fptr <- newForeignPtr_ $ castPtr $ buffer bmp
 
   adv <- peek $ GS.advance slot
-  b <- liftImageIO $ fromColorAndOpacity (PixelRGB8 255 255 255)
+  let b = fromColorAndOpacity (PixelRGB8 255 255 255)
         $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
   return (b
     , V2 (left + fromIntegral w / 2) (-top + fromIntegral h / 2)

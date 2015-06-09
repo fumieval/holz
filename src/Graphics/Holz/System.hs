@@ -20,6 +20,7 @@ module Graphics.Holz.System (System
   , linkMouseButton
   , linkMouseCursor
   , linkMouseScroll
+  , keyPress
   -- * Misc
   , takeScreenshot
   , setTitle
@@ -32,7 +33,6 @@ module Graphics.Holz.System (System
   ) where
 
 import Codec.Picture
-import Control.Bool
 import Control.Lens
 import Control.Monad
 import Data.Bits
@@ -50,11 +50,9 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified GHC.IO.Encoding as Encoding
 import qualified Graphics.UI.GLFW as GLFW
-import qualified Data.HashMap.Strict as HM
 import Graphics.GL
 import Graphics.GL.Ext.EXT.TextureFilterAnisotropic
 import Graphics.Holz.Input
-import Graphics.Holz.Bitmap as Bitmap
 import Data.Reflection
 import Control.Applicative
 
@@ -243,10 +241,10 @@ data VertexBuffer = VertexBuffer !GLuint !GLuint !GLenum !GLsizei
 data Texture = Texture !GLuint
 
 registerTexture :: Image PixelRGBA8 -> IO Texture
-registerTexture img@(Image w h vec) = registerTextures (V2 w h) [(V2 0 0, img)]
+registerTexture img@(Image w h _) = registerTextures (V2 w h) [(V2 0 0, img)]
 
 registerTextures :: V2 Int -> [(V2 Int, Image PixelRGBA8)] -> IO Texture
-registerTextures sw sh imgs = do
+registerTextures (V2 sw sh) imgs = do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
@@ -266,7 +264,7 @@ registerTextures sw sh imgs = do
     $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 8
 
   forM_ imgs $ \(V2 x y, Image w h vec) -> V.unsafeWith vec
-    $ glTexSubImage2D GL_TEXTURE_2D 0 x y (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE
+    $ glTexSubImage2D GL_TEXTURE_2D 0 (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE
     . castPtr
 
   glGenerateMipmap GL_TEXTURE_2D
@@ -324,7 +322,7 @@ setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = do
 getBoundingBox :: Given System => IO (Box V2 Float)
 getBoundingBox = readIORef (refRegion given)
 
-takeScreenshot :: Given System => IO Bitmap
+takeScreenshot :: Given System => IO (Image PixelRGBA8)
 takeScreenshot = do
   V2 w h <- fmap floor <$> view (Box.size zero) <$> readIORef (refRegion given)
   mv <- MV.unsafeNew $ w * h * 4 :: IO (MV.IOVector Word8)
@@ -333,7 +331,7 @@ takeScreenshot = do
   MV.unsafeWith mv $ \ptr -> do
     glReadPixels 0 0 (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE (castPtr ptr)
     MV.unsafeWith mv' $ \dst -> forM_ [0..h-1] $ \y -> copyBytes (plusPtr dst $ y * w * 4) (plusPtr ptr $ (h - y - 1) * w * 4) (4 * w)
-  Image w h <$> V.unsafeFreeze mv' >>= liftImageIO
+  Image w h <$> V.unsafeFreeze mv'
 
 setTitle :: Given System => String -> IO ()
 setTitle str = GLFW.setWindowTitle (theWindow given) str
@@ -361,6 +359,10 @@ scrollCallback :: Given System => GLFW.ScrollCallback
 scrollCallback _ x y = do
   m <- readIORef (mouseScrollHandlers given)
   m $ fmap realToFrac $ V2 x y
+
+keyPress :: Given System => Key -> IO Bool
+keyPress k = fmap (/=GLFW.KeyState'Released)
+  $ GLFW.getKey (theWindow given) (toEnum . fromEnum $ k)
 
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
 overPtr f = alloca $ \p -> f p >> peek p
