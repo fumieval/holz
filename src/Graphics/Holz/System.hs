@@ -27,6 +27,7 @@ module Graphics.Holz.System (System
   , enableCursor
   , disableCursor
   , hideCursor
+  , clearColor
   , getBoundingBox
   , setBoundingBox
   , windowShouldClose
@@ -62,6 +63,8 @@ data System = System
   , theProgram :: GLuint
   , locationModel :: GLint
   , locationProjection :: GLint
+  , locationDiffuse :: GLint
+  , locationSpecular :: GLint
   , keyboardHandlers :: IORef (Chatter Key -> IO ())
   , mouseButtonHandlers :: IORef (Chatter Int -> IO ())
   , mouseCursorHandlers :: IORef (V2 Float -> IO ())
@@ -128,11 +131,17 @@ withHolz windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) m = do
 
   locM <- getUniform prog "model"
   locP <- getUniform prog "projection"
+  locD <- getUniform prog "diffuse"
+  locS <- getUniform prog "specular"
   hk <- newIORef (const (return ()))
   hb <- newIORef (const (return ()))
   hc <- newIORef (const (return ()))
   hs <- newIORef (const (return ()))
-  a <- give (System rbox win prog locM locP hk hb hc hs) $ do
+
+  with (V4 1 1 1 1 :: V4 Float) $ \ptr -> glUniform4fv locD 1 (castPtr ptr)
+  with (V4 1 1 1 1 :: V4 Float) $ \ptr -> glUniform4fv locS 1 (castPtr ptr)
+
+  a <- give (System rbox win prog locM locP locD locS hk hb hc hs) $ do
     GLFW.setFramebufferSizeCallback win $ Just
       $ \_ w h -> modifyIORef rbox $ Box.size zero .~ fmap fromIntegral (V2 w h)
     GLFW.setKeyCallback win $ Just keyCallback
@@ -151,6 +160,10 @@ compileShader src shader = do
   withCString src $ \ptr -> withArray [ptr]
     $ \srcs -> glShaderSource shader 1 srcs nullPtr
   glCompileShader shader
+  l <- overPtr $ glGetShaderiv shader GL_INFO_LOG_LENGTH
+  allocaArray (fromIntegral l) $ \ptr -> do
+    glGetShaderInfoLog shader l nullPtr ptr
+    peekCString ptr >>= putStrLn
 
 vertexAttributes :: IO ()
 vertexAttributes = do
@@ -186,7 +199,15 @@ initializeGL = do
   glLinkProgram shaderProg
   glUseProgram shaderProg
 
-  glBlendFunc GL_ONE GL_ZERO
+  linked <- overPtr (glGetProgramiv shaderProg GL_LINK_STATUS)
+  when (linked == GL_FALSE) $ do
+    maxLength <- overPtr (glGetProgramiv shaderProg GL_INFO_LOG_LENGTH)
+    allocaArray (fromIntegral maxLength) $ \ptr -> do
+      glGetProgramInfoLog shaderProg maxLength nullPtr ptr
+      peekCString ptr >>= putStrLn
+
+  glEnable GL_BLEND
+  glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
   glClearColor 0 0 0 1
   glColorMask GL_TRUE GL_TRUE GL_TRUE GL_TRUE
   glDepthFunc GL_LEQUAL
@@ -369,24 +390,31 @@ overPtr f = alloca $ \p -> f p >> peek p
 {-# INLINE overPtr #-}
 
 vertexShaderSource :: String
-vertexShaderSource = "#version 400 \
+vertexShaderSource = "#version 400\n\
   \uniform mat4 projection; \
   \uniform mat4 model; \
   \in vec3 in_Position; \
   \in vec2 in_UV; \
   \in vec3 in_Normal; \
   \out vec2 texUV; \
+  \out vec3 normal; \
+  \out vec4 viewPos; \
   \void main(void) { \
-  \  gl_Position = projection * model * vec4(in_Position, 1.0); \
+  \  viewPos = model * vec4(in_Position, 1.0); \
+  \  gl_Position = projection * viewPos; \
   \  texUV = in_UV; \
+  \  normal = in_Normal;\
   \}"
 
 fragmentShaderSource :: String
-fragmentShaderSource = "#version 400 \
+fragmentShaderSource = "#version 400\n\
   \out vec4 fragColor; \
   \in vec2 texUV; \
+  \in vec3 normal; \
+  \in vec4 viewPos; \
   \uniform sampler2D tex; \
   \uniform vec4 diffuse; \
+  \uniform vec3 specular; \
   \void main(void){ \
-  \  fragColor = texture(tex, texUV).rgba * diffuse;\
+  \  fragColor = texture(tex, texUV) * diffuse; \
   \}"
