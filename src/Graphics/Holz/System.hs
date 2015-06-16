@@ -55,6 +55,7 @@ import Graphics.GL
 import Graphics.GL.Ext.EXT.TextureFilterAnisotropic
 import Graphics.Holz.Input
 import Data.Reflection
+import System.Mem.Weak
 import Control.Applicative
 
 data System = System
@@ -256,14 +257,17 @@ instance Storable Vertex where
     where ptr' = castPtr ptr
   {-# INLINE poke #-}
 
--- VAO, VBO, primitive mode, length
+-- | If a 'VertexBuffer' is considered to be unreachable, then it will be released.
 data VertexBuffer = VertexBuffer !GLuint !GLuint !GLenum !GLsizei
 
+-- | If a 'Texture' is considered to be unreachable, then it will be released.
 data Texture = Texture !GLuint
 
+-- | Send an image into the graphics driver.
 registerTexture :: Image PixelRGBA8 -> IO Texture
 registerTexture img@(Image w h _) = registerTextures (V2 w h) [(V2 0 0, img)]
 
+-- | Send a set of images into the graphics driver.
 registerTextures :: V2 Int -> [(V2 Int, Image PixelRGBA8)] -> IO Texture
 registerTextures (V2 sw sh) imgs = do
   tex <- overPtr (glGenTextures 1)
@@ -290,11 +294,14 @@ registerTextures (V2 sw sh) imgs = do
 
   glGenerateMipmap GL_TEXTURE_2D
 
-  return (Texture tex)
+  let t = Texture tex
+  addFinalizer t (releaseTexture t)
+  return t
 
 releaseTexture :: Texture -> IO ()
 releaseTexture (Texture i) = with i $ glDeleteTextures 1
 
+-- | Send vertices to the graphics driver.
 registerVertex :: PrimitiveMode -> V.Vector Vertex -> IO VertexBuffer
 registerVertex mode vs = do
   vao <- overPtr $ glGenVertexArrays 1
@@ -304,7 +311,9 @@ registerVertex mode vs = do
   vertexAttributes
   let siz = fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)
   V.unsafeWith vs $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
-  return $ VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length vs)
+  let vb = VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length vs)
+  addFinalizer vb (releaseVertex vb)
+  return vb
 
 releaseVertex :: VertexBuffer -> IO ()
 releaseVertex (VertexBuffer vao vbo _ _) = do
