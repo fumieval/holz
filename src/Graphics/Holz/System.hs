@@ -36,6 +36,7 @@ module Graphics.Holz.System (System
 import Codec.Picture
 import Control.Lens
 import Control.Monad
+import Control.Monad.IO.Class
 import Data.Bits
 import Data.BoundingBox as Box
 import Data.IORef
@@ -88,15 +89,15 @@ data PrimitiveMode = Triangles | TriangleFan | TriangleStrip | LineStrip | LineL
 
 data WindowMode = FullScreen | Resizable | Windowed deriving (Show, Eq, Ord)
 
-windowShouldClose :: Given System => IO Bool
-windowShouldClose = GLFW.windowShouldClose (theWindow given)
+windowShouldClose :: (Given System, MonadIO m) => m Bool
+windowShouldClose = liftIO $ GLFW.windowShouldClose (theWindow given)
 
-withFrame :: Given System => IO a -> IO a
+withFrame :: (Given System, MonadIO m) => m a -> m a
 withFrame m = do
-  glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
+  liftIO $ glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
   a <- m
-  GLFW.swapBuffers $ theWindow given
-  GLFW.pollEvents
+  liftIO $ GLFW.swapBuffers $ theWindow given
+  liftIO GLFW.pollEvents
   return a
 
 withHolz :: WindowMode -> Box V2 Float -> (Given System => IO a) -> IO a
@@ -260,16 +261,22 @@ instance Storable Vertex where
 -- | If a 'VertexBuffer' is considered to be unreachable, then it will be released.
 data VertexBuffer = VertexBuffer !GLuint !GLuint !GLenum !GLsizei
 
+instance Eq VertexBuffer where
+  VertexBuffer i _ _ _ == VertexBuffer j _ _ _ = i == j
+
+instance Ord VertexBuffer where
+  VertexBuffer i _ _ _ `compare` VertexBuffer j _ _ _ = compare i j
+
 -- | If a 'Texture' is considered to be unreachable, then it will be released.
-data Texture = Texture !GLuint
+data Texture = Texture !GLuint deriving (Eq, Ord)
 
 -- | Send an image into the graphics driver.
-registerTexture :: Image PixelRGBA8 -> IO Texture
+registerTexture :: MonadIO m => Image PixelRGBA8 -> m Texture
 registerTexture img@(Image w h _) = registerTextures (V2 w h) [(V2 0 0, img)]
 
 -- | Send a set of images into the graphics driver.
-registerTextures :: V2 Int -> [(V2 Int, Image PixelRGBA8)] -> IO Texture
-registerTextures (V2 sw sh) imgs = do
+registerTextures :: MonadIO m => V2 Int -> [(V2 Int, Image PixelRGBA8)] -> m Texture
+registerTextures (V2 sw sh) imgs = liftIO $ do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
@@ -302,8 +309,8 @@ releaseTexture :: Texture -> IO ()
 releaseTexture (Texture i) = with i $ glDeleteTextures 1
 
 -- | Send vertices to the graphics driver.
-registerVertex :: PrimitiveMode -> V.Vector Vertex -> IO VertexBuffer
-registerVertex mode vs = do
+registerVertex :: MonadIO m => PrimitiveMode -> V.Vector Vertex -> m VertexBuffer
+registerVertex mode vs = liftIO $ do
   vao <- overPtr $ glGenVertexArrays 1
   glBindVertexArray vao
   vbo <- overPtr $ glGenBuffers 1
@@ -320,40 +327,40 @@ releaseVertex (VertexBuffer vao vbo _ _) = do
   with vao $ glDeleteVertexArrays 1
   with vbo $ glDeleteBuffers 1
 
-setProjection :: Given System => M44 Float -> IO ()
-setProjection proj = with proj
+setProjection :: MonadIO m => Given System => M44 Float -> m ()
+setProjection proj = liftIO $ with proj
   $ \ptr -> glUniformMatrix4fv (locationProjection given) 1 1 $ castPtr ptr
 
-drawVertex :: Given System => M44 Float -> Texture -> VertexBuffer -> IO ()
-drawVertex mat (Texture tex) (VertexBuffer vao vbo m n) = do
+drawVertex :: (Given System, MonadIO m) => M44 Float -> Texture -> VertexBuffer -> m ()
+drawVertex mat (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
   with mat $ \p -> glUniformMatrix4fv (locationModel given) 1 1 (castPtr p)
   glBindTexture GL_TEXTURE_2D tex
   glBindVertexArray vao
   glBindBuffer GL_ARRAY_BUFFER vbo
   glDrawArrays m 0 n
 
-hideCursor :: Given System => IO ()
-hideCursor = GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Hidden
+hideCursor :: (Given System, MonadIO m) => m ()
+hideCursor = liftIO $ GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Hidden
 
-disableCursor :: Given System => IO ()
-disableCursor = GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Disabled
+disableCursor :: (Given System, MonadIO m) => m ()
+disableCursor = liftIO $ GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Disabled
 
-enableCursor :: Given System => IO ()
-enableCursor = GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Normal
+enableCursor :: (Given System, MonadIO m) => m ()
+enableCursor = liftIO $ GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Normal
 
-clearColor :: Given System => V4 Float -> IO ()
-clearColor (V4 r g b a) = glClearColor (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
+clearColor :: (Given System, MonadIO m) => V4 Float -> m ()
+clearColor (V4 r g b a) = liftIO $ glClearColor (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
 
-setBoundingBox :: Given System => Box V2 Float -> IO ()
-setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = do
+setBoundingBox :: (Given System, MonadIO m) => Box V2 Float -> m ()
+setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ do
   GLFW.setWindowSize (theWindow given) (floor (x1 - x0)) (floor (y1 - y0))
   writeIORef (refRegion given) box
 
-getBoundingBox :: Given System => IO (Box V2 Float)
-getBoundingBox = readIORef (refRegion given)
+getBoundingBox :: (Given System, MonadIO m) => m (Box V2 Float)
+getBoundingBox = liftIO $ readIORef (refRegion given)
 
-takeScreenshot :: Given System => IO (Image PixelRGBA8)
-takeScreenshot = do
+takeScreenshot :: (Given System, MonadIO m) => m (Image PixelRGBA8)
+takeScreenshot = liftIO $ do
   V2 w h <- fmap floor <$> view (Box.size zero) <$> readIORef (refRegion given)
   mv <- MV.unsafeNew $ w * h * 4 :: IO (MV.IOVector Word8)
   mv' <- MV.unsafeNew $ w * h * 4
@@ -363,8 +370,8 @@ takeScreenshot = do
     MV.unsafeWith mv' $ \dst -> forM_ [0..h-1] $ \y -> copyBytes (plusPtr dst $ y * w * 4) (plusPtr ptr $ (h - y - 1) * w * 4) (4 * w)
   Image w h <$> V.unsafeFreeze mv'
 
-setTitle :: Given System => String -> IO ()
-setTitle str = GLFW.setWindowTitle (theWindow given) str
+setTitle :: (Given System, MonadIO m) => String -> m ()
+setTitle str = liftIO $ GLFW.setWindowTitle (theWindow given) str
 
 keyCallback :: Given System => GLFW.KeyCallback
 keyCallback _ k _ st _ = do
@@ -390,8 +397,8 @@ scrollCallback _ x y = do
   m <- readIORef (mouseScrollHandlers given)
   m $ fmap realToFrac $ V2 x y
 
-keyPress :: Given System => Key -> IO Bool
-keyPress k = fmap (/=GLFW.KeyState'Released)
+keyPress :: (Given System, MonadIO m) => Key -> m Bool
+keyPress k = liftIO $ fmap (/=GLFW.KeyState'Released)
   $ GLFW.getKey (theWindow given) (toEnum . fromEnum $ k)
 
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
