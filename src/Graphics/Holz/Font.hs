@@ -95,11 +95,11 @@ renderChar (Font face _ _) pixel ch = do
   let b = fromColorAndOpacity (PixelRGB8 255 255 255)
         $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
   return (b
-    , V2 (left + fromIntegral w / 2) (-top + fromIntegral h / 2)
+    , V2 left (-top)
     , V2 (fromIntegral (V.x adv) / 64) 0)
 
 fromColorAndOpacity :: PixelRGB8 -> Image Pixel8 -> Image PixelRGBA8
-fromColorAndOpacity (PixelRGB8 r g b) (Image w h vec) = Image w h $ V.generate (w * h * 4) pix where
+fromColorAndOpacity (PixelRGB8 r g b) (Image w h vec) = Image w h $! V.generate (w * h * 4) pix where
     pix i = if testBit i 0
         then if testBit i 1
             then vec V.! unsafeShiftR i 2
