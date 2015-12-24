@@ -4,6 +4,7 @@ module Graphics.Holz.System (Window
   , withFrame
   , withHolz
   , WindowMode(..)
+  , Box.Box(..)
   -- * Graphic
   , Texture
   , registerTexture
@@ -236,7 +237,6 @@ initializeGL = do
   glDepthMask GL_TRUE
   glDisable GL_CULL_FACE
   glEnable GL_DEPTH_TEST
-  glEnable GL_FRAMEBUFFER_SRGB
   glEnable GL_LINE_SMOOTH
 
   return shaderProg
@@ -310,7 +310,7 @@ blankTexture :: Texture
 blankTexture = unsafePerformIO $ do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
-  with (V3 255 255 255 :: V3 Word8) $ glTexImage2D GL_TEXTURE_2D 0 GL_RGB 1 1 0 GL_RGB GL_UNSIGNED_BYTE . castPtr
+  with (pure 255 :: V3 Word8) $ glTexImage2D GL_TEXTURE_2D 0 GL_SRGB8 1 1 0 GL_RGBA GL_UNSIGNED_BYTE . castPtr
   return $ Texture tex
 {-# NOINLINE blankTexture #-}
 
@@ -461,8 +461,8 @@ vertexShaderSource = "#version 400\n\
   \in vec4 in_Color; \
   \out vec2 texUV; \
   \out vec3 normal; \
-  \out vec4 color; \
   \out vec4 viewPos; \
+  \out vec4 color; \
   \void main(void) { \
   \  viewPos = model * vec4(in_Position, 1.0); \
   \  gl_Position = projection * viewPos; \
