@@ -18,6 +18,7 @@ module Graphics.Holz.System (Window
   , releaseVertex
   , setProjection
   , drawVertex
+  , drawVertexPlain
   , setDiffuse
   -- * Input
   , linkKeyboard
@@ -25,6 +26,7 @@ module Graphics.Holz.System (Window
   , linkMouseCursor
   , linkMouseScroll
   , keyPress
+  , getCursorPos
   -- * Misc
   , takeScreenshot
   , setTitle
@@ -112,10 +114,10 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   let ww = floor $ x1 - x0
       wh = floor $ y1 - y0
 
-  -- GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
-  -- GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 2
-  -- GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
-  -- GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
+  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMajor 3
+  GLFW.windowHint $ GLFW.WindowHint'ContextVersionMinor 2
+  GLFW.windowHint $ GLFW.WindowHint'OpenGLProfile GLFW.OpenGLProfile'Core
+  GLFW.windowHint $ GLFW.WindowHint'OpenGLForwardCompat True
   GLFW.windowHint $ GLFW.WindowHint'Resizable (windowmode == Resizable)
 
   mon <- if windowmode == FullScreen then GLFW.getPrimaryMonitor else return Nothing
@@ -350,16 +352,17 @@ releaseTexture :: Texture -> IO ()
 releaseTexture (Texture i) = with i $ glDeleteTextures 1
 
 -- | Send vertices to the graphics driver.
-registerVertex :: MonadIO m => PrimitiveMode -> V.Vector Vertex -> m VertexBuffer
+registerVertex :: MonadIO m => PrimitiveMode -> [Vertex] -> m VertexBuffer
 registerVertex mode vs = liftIO $ do
   vao <- overPtr $ glGenVertexArrays 1
   glBindVertexArray vao
   vbo <- overPtr $ glGenBuffers 1
   glBindBuffer GL_ARRAY_BUFFER vbo
   vertexAttributes
-  let siz = fromIntegral $ V.length vs * sizeOf (undefined :: Vertex)
-  V.unsafeWith vs $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
-  let vb = VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length vs)
+  let va = V.fromList vs
+  let siz = fromIntegral $ V.length va * sizeOf (undefined :: Vertex)
+  V.unsafeWith va $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
+  let vb = VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length va)
   -- addFinalizer vb $ do
   --  with vao $ glDeleteVertexArrays 1
   --  with vbo $ glDeleteBuffers 1
@@ -376,6 +379,10 @@ setProjection proj = liftIO $ with proj
 
 setDiffuse :: (MonadIO m, Given Window) => V4 Float -> m ()
 setDiffuse col = liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse given) 1 (castPtr ptr)
+
+drawVertexPlain :: (Given Window, MonadIO m) => M44 Float -> VertexBuffer -> m ()
+drawVertexPlain m = drawVertex m blankTexture
+{-# INLINE drawVertexPlain #-}
 
 drawVertex :: (Given Window, MonadIO m) => M44 Float -> Texture -> VertexBuffer -> m ()
 drawVertex mat (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
@@ -446,6 +453,9 @@ scrollCallback h _ x y = do
 keyPress :: (Given Window, MonadIO m) => Key -> m Bool
 keyPress k = liftIO $ fmap (/=GLFW.KeyState'Released)
   $ GLFW.getKey (theWindow given) (toEnum . fromEnum $ k)
+
+getCursorPos :: (Given Window, MonadIO m) => Key -> m (V2 Float)
+getCursorPos k = liftIO $ fmap realToFrac <$> uncurry V2 <$> GLFW.getCursorPos (theWindow given)
 
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
 overPtr f = alloca $ \p -> f p >> peek p
