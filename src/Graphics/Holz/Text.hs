@@ -17,10 +17,11 @@ import Data.Foldable
 import Data.Reflection (give)
 import Graphics.Holz
 import Linear
-import Wille.Base.Graphic
+import Graphics.Parkett.Vertex
 import Data.Map.Strict as Map
 import Control.Monad.Trans
 import Control.Monad.Skeleton
+import Control.Object
 
 data WritingBase x where
   TypeChar :: !Char -> !Float -> !(V4 Float) -> WritingBase ()
@@ -28,7 +29,7 @@ data WritingBase x where
   Clear :: WritingBase ()
   GetOffset :: WritingBase (V2 Float)
 
-type Renderer = MVar WritingBase
+type Renderer = MVar (Object WritingBase IO)
 type Writing = Skeleton WritingBase
 
 simpleL :: Given Window => Float -> V4 Float -> String -> M44 Float -> Writing ()
@@ -65,8 +66,8 @@ data WriterState = WriterState
   , _cache :: !(Map.Map (Float, Char) (Texture, VertexBuffer, V2 Float)) }
 makeLenses ''WriterState
 
-typewriter :: FilePath -> IO Renderer
-typewriter path = do
+typewriter :: MonadIO m => FilePath -> m Renderer
+typewriter path = liftIO $ do
   font <- readFont path
   newMVar $ WriterState [] zero Map.empty @~ \case
     TypeChar ch s col -> do
@@ -74,7 +75,7 @@ typewriter path = do
         Just a -> return a
         Nothing -> do
           (img@(Image w h _), ofs, adv) <- lift $ renderChar font s ch
-          buf <- registerVertex TriangleStrip
+          buf <- uncurry registerVertex
               $ rectangle col ofs (ofs + V2 (fromIntegral w) (fromIntegral h))
           tex <- registerTexture img
           cache . at (s, ch) ?= (tex, buf, adv)

@@ -368,8 +368,8 @@ registerVertex mode vs = liftIO $ do
   --  with vbo $ glDeleteBuffers 1
   return vb
 
-releaseVertex :: VertexBuffer -> IO ()
-releaseVertex (VertexBuffer vao vbo _ _) = do
+releaseVertex :: MonadIO m => VertexBuffer -> m ()
+releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
   with vao $ glDeleteVertexArrays 1
   with vbo $ glDeleteBuffers 1
 
