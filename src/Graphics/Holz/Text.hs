@@ -63,7 +63,7 @@ getOffset = bone GetOffset
 data WriterState = WriterState
   { _toDraw :: [(M44 Float -> M44 Float, Texture, VertexBuffer)]
   , _offset :: !(V2 Float)
-  , _cache :: !(Map.Map (Float, Char) (Texture, VertexBuffer, V2 Float)) }
+  , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer, V2 Float)) }
 makeLenses ''WriterState
 
 typewriter :: MonadIO m => FilePath -> m Renderer
@@ -71,14 +71,14 @@ typewriter path = liftIO $ do
   font <- readFont path
   newMVar $ WriterState [] zero Map.empty @~ \case
     TypeChar ch s col -> do
-      (tex, buf, adv) <- preuse (cache . ix (s, ch)) >>= \case
+      (tex, buf, adv) <- preuse (cache . ix (s, ch, col)) >>= \case
         Just a -> return a
         Nothing -> do
           (img@(Image w h _), ofs, adv) <- lift $ renderChar font s ch
           buf <- uncurry registerVertex
               $ rectangle col ofs (ofs + V2 (fromIntegral w) (fromIntegral h))
           tex <- registerTexture img
-          cache . at (s, ch) ?= (tex, buf, adv)
+          cache . at (s, ch, col) ?= (tex, buf, adv)
           return (tex, buf, adv)
       pos <- use offset
       toDraw %= ((translation . _xy +~ pos, tex, buf):)
