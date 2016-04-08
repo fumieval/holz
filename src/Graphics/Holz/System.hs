@@ -27,6 +27,7 @@ module Graphics.Holz.System (Window
   , linkMouseScroll
   , keyPress
   , getCursorPos
+  , mousePress
   -- * Misc
   , takeScreenshot
   , setTitle
@@ -454,8 +455,12 @@ keyPress :: (Given Window, MonadIO m) => Key -> m Bool
 keyPress k = liftIO $ fmap (/=GLFW.KeyState'Released)
   $ GLFW.getKey (theWindow given) (toEnum . fromEnum $ k)
 
-getCursorPos :: (Given Window, MonadIO m) => Key -> m (V2 Float)
-getCursorPos k = liftIO $ fmap realToFrac <$> uncurry V2 <$> GLFW.getCursorPos (theWindow given)
+mousePress :: (Given Window, MonadIO m) => Int -> m Bool
+mousePress k = liftIO $ fmap (/=GLFW.MouseButtonState'Released)
+  $ GLFW.getMouseButton (theWindow given) (toEnum k)
+
+getCursorPos :: (Given Window, MonadIO m) => m (V2 Float)
+getCursorPos = liftIO $ fmap realToFrac <$> uncurry V2 <$> GLFW.getCursorPos (theWindow given)
 
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
 overPtr f = alloca $ \p -> f p >> peek p
