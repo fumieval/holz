@@ -149,6 +149,7 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   GLFW.setFramebufferSizeCallback win $ Just
     $ \_ w h -> do
+      GLFW.makeContextCurrent $ Just win
       modifyIORef rbox $ Box.size zero .~ fmap fromIntegral (V2 w h)
       glViewport 0 0 (fromIntegral w) (fromIntegral h)
 
