@@ -17,7 +17,7 @@ import Data.Foldable
 import Data.Reflection (give)
 import Graphics.Holz
 import Linear
-import Graphics.Parkett.Vertex
+import Graphics.Holz.Vertex
 import Data.Map.Strict as Map
 import Control.Monad.Trans
 import Control.Monad.Skeleton
