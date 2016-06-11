@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
-module Graphics.Parkett.Vertex where
+module Graphics.Holz.Vertex where
 import Control.Lens
 import Graphics.Holz
 import Linear

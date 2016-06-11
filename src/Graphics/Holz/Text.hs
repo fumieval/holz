@@ -1,5 +1,5 @@
 {-# LANGUAGE ExistentialQuantification, Rank2Types, ScopedTypeVariables, LambdaCase, GADTs, FlexibleContexts, BangPatterns, TemplateHaskell, DeriveFunctor #-}
-module Graphics.Parkett.Text (
+module Graphics.Holz.Text (
   typewriter
   , Writing
   , Renderer
