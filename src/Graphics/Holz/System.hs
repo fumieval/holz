@@ -17,6 +17,7 @@ module Graphics.Holz.System (Window
   , registerVertex
   , releaseVertex
   , setProjection
+  , setViewport
   , drawVertex
   , drawVertexPlain
   , setDiffuse
@@ -294,7 +295,6 @@ instance Storable Vertex where
     where ptr' = castPtr ptr
   {-# INLINE poke #-}
 
--- | If a 'VertexBuffer' is considered to be unreachable, then it will be released.
 data VertexBuffer = VertexBuffer !GLuint !GLuint !GLenum !GLsizei
 
 instance Eq VertexBuffer where
@@ -303,7 +303,6 @@ instance Eq VertexBuffer where
 instance Ord VertexBuffer where
   VertexBuffer i _ _ _ `compare` VertexBuffer j _ _ _ = compare i j
 
--- | If a 'Texture' is considered to be unreachable, then it will be released.
 data Texture = Texture !GLuint deriving (Eq, Ord)
 
 -- | Send an image into the graphics driver.
@@ -378,6 +377,13 @@ releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
 setProjection :: (MonadIO m, Given Window) => M44 Float -> m ()
 setProjection proj = liftIO $ with proj
   $ \ptr -> glUniformMatrix4fv (locationProjection given) 1 1 $ castPtr ptr
+
+setViewport :: (MonadIO m, Given Window) => Box V2 Int -> m ()
+setViewport (Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ glViewport
+  (fromIntegral x0)
+  (fromIntegral y0)
+  (fromIntegral $ x1 - x0)
+  (fromIntegral $ y1 - y0)
 
 setDiffuse :: (MonadIO m, Given Window) => V4 Float -> m ()
 setDiffuse col = liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse given) 1 (castPtr ptr)
