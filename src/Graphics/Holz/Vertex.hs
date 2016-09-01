@@ -1,4 +1,15 @@
 {-# LANGUAGE FlexibleContexts #-}
+---------------------------------------------------------------------------
+-- |
+-- Copyright   :  (C) 2016 Fumiaki Kinoshita
+-- License     :  BSD-style (see the file LICENSE)
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-- Simple drawing operations
+---------------------------------------------------------------------------
 module Graphics.Holz.Vertex where
 import Control.Lens
 import Graphics.Holz

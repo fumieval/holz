@@ -1,3 +1,14 @@
+---------------------------------------------------------------------------
+-- |
+-- Copyright   :  (C) 2016 Fumiaki Kinoshita
+-- License     :  BSD-style (see the file LICENSE)
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-- Low level interface for font rendering
+---------------------------------------------------------------------------
 module Graphics.Holz.Font
   ( Font
   , readFont

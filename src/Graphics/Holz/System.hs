@@ -1,44 +1,60 @@
 {-# LANGUAGE FlexibleContexts, Rank2Types #-}
-module Graphics.Holz.System (Window
+---------------------------------------------------------------------------
+-- |
+-- Copyright   :  (C) 2016 Fumiaki Kinoshita
+-- License     :  BSD-style (see the file LICENSE)
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-- The main API of holz
+---------------------------------------------------------------------------
+module Graphics.Holz.System (withHolz
+  -- * Window operation
+  , Window
   , openWindow
-  , withFrame
-  , withHolz
   , WindowMode(..)
   , Box.Box(..)
-  -- * Graphic
+  , windowShouldClose
+  , withFrame
+  , setTitle
+  , clearColor
+  -- * Textures
   , Texture
   , registerTexture
   , registerTextures
   , releaseTexture
   , blankTexture
+  -- * Vertices
   , Vertex(..)
   , PrimitiveMode(..)
   , VertexBuffer
   , registerVertex
   , releaseVertex
-  , setProjection
+  -- * Drawing region
   , setViewport
+  , getBoundingBox
+  , setBoundingBox
+  -- * Rendering
+  , setProjection
   , drawVertex
   , drawVertexPlain
   , setDiffuse
-  -- * Input
+  -- * Input (callback)
   , linkKeyboard
   , linkMouseButton
   , linkMouseCursor
   , linkMouseScroll
+  -- * Input (poll)
   , keyPress
   , getCursorPos
   , mousePress
   -- * Misc
   , takeScreenshot
-  , setTitle
   , enableCursor
   , disableCursor
   , hideCursor
-  , clearColor
-  , getBoundingBox
-  , setBoundingBox
-  , windowShouldClose
   ) where
 
 import Codec.Picture
@@ -82,25 +98,32 @@ data Window = Window
   , mouseScrollHandlers :: {-# UNPACK #-} !(IORef (V2 Float -> IO ()))
   }
 
+-- | Set a handler for key events.
 linkKeyboard :: Given Window => (Chatter Key -> IO ()) -> IO ()
 linkKeyboard f = modifyIORef (keyboardHandlers given) (liftA2 (>>) f)
 
+-- | Set a handler for mouse button events.
 linkMouseButton :: Given Window => (Chatter Int -> IO ()) -> IO ()
 linkMouseButton f = modifyIORef (mouseButtonHandlers given) (liftA2 (>>) f)
 
+-- | Set a handler for cursor movement.
 linkMouseCursor :: Given Window => (V2 Float -> IO ()) -> IO ()
 linkMouseCursor f = modifyIORef (mouseCursorHandlers given) (liftA2 (>>) f)
 
+-- | Set a handler for scroll events.
 linkMouseScroll :: Given Window => (V2 Float -> IO ()) -> IO ()
 linkMouseScroll f = modifyIORef (mouseScrollHandlers given) (liftA2 (>>) f)
 
+-- | 'PrimitiveMode' describes how vertices will be drawn.
 data PrimitiveMode = Triangles | TriangleFan | TriangleStrip | LineStrip | LineLoop
 
 data WindowMode = FullScreen | Resizable | Windowed deriving (Show, Eq, Ord)
 
+-- | Returns 'True' when the window should be closed.
 windowShouldClose :: (Given Window, MonadIO m) => m Bool
 windowShouldClose = liftIO $ GLFW.windowShouldClose (theWindow given)
 
+-- | Run actions for a window.
 withFrame :: (MonadIO m) => Window -> (Given Window => m a) -> m a
 withFrame win m = do
   liftIO $ GLFW.makeContextCurrent $ Just $ theWindow win
@@ -111,6 +134,7 @@ withFrame win m = do
   liftIO GLFW.pollEvents
   return a
 
+-- | Open a window.
 openWindow :: WindowMode -> Box V2 Float -> IO Window
 openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   let ww = floor $ x1 - x0
@@ -161,9 +185,11 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   return $ Window rbox win prog locM locP locD locS hk hb hc hs
 
+-- | Close a window.
 closeWindow :: Window -> IO ()
 closeWindow = GLFW.destroyWindow . theWindow
 
+-- | Any API except 'withHolz' has to be used inside 'withHolz'.
 withHolz :: IO a -> IO a
 withHolz m = do
   -- Encoding.setForeignEncoding Encoding.utf8
@@ -309,6 +335,7 @@ data Texture = Texture !GLuint deriving (Eq, Ord)
 registerTexture :: MonadIO m => Image PixelRGBA8 -> m Texture
 registerTexture img@(Image w h _) = registerTextures (V2 w h) [(V2 0 0, img)]
 
+-- | A blank texture.
 blankTexture :: Texture
 blankTexture = unsafePerformIO $ do
   tex <- overPtr (glGenTextures 1)
@@ -369,15 +396,18 @@ registerVertex mode vs = liftIO $ do
   --  with vbo $ glDeleteBuffers 1
   return vb
 
+-- | Release a 'VertexBuffer'. The 'VertexBuffer' can't be used after this.
 releaseVertex :: MonadIO m => VertexBuffer -> m ()
 releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
   with vao $ glDeleteVertexArrays 1
   with vbo $ glDeleteBuffers 1
 
+-- | Set the projection matrix.
 setProjection :: (MonadIO m, Given Window) => M44 Float -> m ()
 setProjection proj = liftIO $ with proj
   $ \ptr -> glUniformMatrix4fv (locationProjection given) 1 1 $ castPtr ptr
 
+-- | Set a viewport.
 setViewport :: (MonadIO m, Given Window) => Box V2 Int -> m ()
 setViewport (Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ glViewport
   (fromIntegral x0)
@@ -385,6 +415,7 @@ setViewport (Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ glViewport
   (fromIntegral $ x1 - x0)
   (fromIntegral $ y1 - y0)
 
+-- | Set a diffuse color.
 setDiffuse :: (MonadIO m, Given Window) => V4 Float -> m ()
 setDiffuse col = liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse given) 1 (castPtr ptr)
 
@@ -392,6 +423,7 @@ drawVertexPlain :: (Given Window, MonadIO m) => M44 Float -> VertexBuffer -> m (
 drawVertexPlain m = drawVertex m blankTexture
 {-# INLINE drawVertexPlain #-}
 
+-- | Draw 'VertexBuffer' using the given 'Texture' and a model matrix.
 drawVertex :: (Given Window, MonadIO m) => M44 Float -> Texture -> VertexBuffer -> m ()
 drawVertex mat (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
   with mat $ \p -> glUniformMatrix4fv (locationModel given) 1 1 (castPtr p)
@@ -400,18 +432,23 @@ drawVertex mat (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
   glBindBuffer GL_ARRAY_BUFFER vbo
   glDrawArrays m 0 n
 
+-- | Hide the system cursor.
 hideCursor :: (Given Window, MonadIO m) => m ()
 hideCursor = liftIO $ GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Hidden
 
+-- | Hide and pin the cursor against the program.
 disableCursor :: (Given Window, MonadIO m) => m ()
 disableCursor = liftIO $ GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Disabled
 
+-- | Re-enable the cursor.
 enableCursor :: (Given Window, MonadIO m) => m ()
 enableCursor = liftIO $ GLFW.setCursorInputMode (theWindow given) GLFW.CursorInputMode'Normal
 
+-- | Set the background color.
 clearColor :: (Given Window, MonadIO m) => V4 Float -> m ()
 clearColor (V4 r g b a) = liftIO $ glClearColor (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
 
+-- | Set the size of the window and the resolution.
 setBoundingBox :: (Given Window, MonadIO m) => Box V2 Float -> m ()
 setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ do
   GLFW.setWindowSize (theWindow given) (floor (x1 - x0)) (floor (y1 - y0))
@@ -420,6 +457,7 @@ setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ do
 getBoundingBox :: (Given Window, MonadIO m) => m (Box V2 Float)
 getBoundingBox = liftIO $ readIORef (refRegion given)
 
+-- | Take a screenshot of the window.
 takeScreenshot :: (Given Window, MonadIO m) => m (Image PixelRGBA8)
 takeScreenshot = liftIO $ do
   V2 w h <- fmap floor <$> view (Box.size zero) <$> readIORef (refRegion given)
@@ -431,6 +469,7 @@ takeScreenshot = liftIO $ do
     MV.unsafeWith mv' $ \dst -> forM_ [0..h-1] $ \y -> copyBytes (plusPtr dst $ y * w * 4) (plusPtr ptr $ (h - y - 1) * w * 4) (4 * w)
   Image w h <$> V.unsafeFreeze mv'
 
+-- | Set the window title.
 setTitle :: (Given Window, MonadIO m) => String -> m ()
 setTitle str = liftIO $ GLFW.setWindowTitle (theWindow given) str
 

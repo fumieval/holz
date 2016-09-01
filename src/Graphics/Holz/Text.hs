@@ -1,7 +1,19 @@
 {-# LANGUAGE ExistentialQuantification, Rank2Types, ScopedTypeVariables, LambdaCase, GADTs, FlexibleContexts, BangPatterns, TemplateHaskell, DeriveFunctor #-}
+---------------------------------------------------------------------------
+-- |
+-- Copyright   :  (C) 2016 Fumiaki Kinoshita
+-- License     :  BSD-style (see the file LICENSE)
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-- Text rendering class
+---------------------------------------------------------------------------
 module Graphics.Holz.Text (
   typewriter
   , Writing
+  , WritingBase(..)
   , Renderer
   , render
   , clear
@@ -9,6 +21,7 @@ module Graphics.Holz.Text (
   , getOffset
   , simpleL
   , simpleR
+  , (..-)
   ) where
 import Codec.Picture
 import Control.Concurrent.MVar
@@ -29,15 +42,31 @@ data WritingBase x where
   Clear :: WritingBase ()
   GetOffset :: WritingBase (V2 Float)
 
+-- | A 'Renderer' handles 'Writing' operations.
 type Renderer = MVar (Object WritingBase IO)
+
+-- | The 'Writing' monad is the interface of text rendering.
+--  'string', 'render', 'clear', 'getOffset' etc through ('..-').
+--
+-- @renderer ..- 'simpleL' 12 (V4 1 1 1 1) "Hello, world" 'identity'@
+--
 type Writing = Skeleton WritingBase
 
-simpleL :: Given Window => Float -> V4 Float -> String -> M44 Float -> Writing ()
+-- | Render a 'String'.
+-- The left edge of the baseline will be at @mat !* V4 0 0 0 1@.
+simpleL :: Given Window
+  => Float -- Size
+  -> V4 Float -- ^ Color (RGBA)
+  -> String -- String
+  -> M44 Float -- Matrix
+  -> Writing ()
 simpleL s col str m = do
   string s col str
   render m
   clear
 
+-- | Draw a 'String', right-aligned.
+-- The right edge of the baseline will be at @mat !* V4 0 0 0 1@.
 simpleR :: Given Window => Float -> V4 Float -> String -> M44 Float -> Writing ()
 simpleR s col str m = do
   string s col str
@@ -45,18 +74,23 @@ simpleR s col str m = do
   render $ m !*! set translation (V3 (-x) (-y) 0) identity
   clear
 
+-- | Render the text to the window, applying a model matrix.
 render :: Given Window => M44 Float -> Writing ()
 render m = bone $ Render given m
 
+-- | Clear the text.
 clear :: Writing ()
 clear = bone Clear
 
+-- | Type one character.
 char :: Float -> V4 Float -> Char -> Writing ()
 char s col ch = bone $ TypeChar ch s col
 
+-- | Write a string.
 string :: Float -> V4 Float -> String -> Writing ()
 string s col = mapM_ (char s col)
 
+-- | Get the current position of writing.
 getOffset :: Writing (V2 Float)
 getOffset = bone GetOffset
 
@@ -66,6 +100,7 @@ data WriterState = WriterState
   , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer, V2 Float)) }
 makeLenses ''WriterState
 
+-- | Create a renderer of the specified font.
 typewriter :: MonadIO m => FilePath -> m Renderer
 typewriter path = liftIO $ do
   font <- readFont path

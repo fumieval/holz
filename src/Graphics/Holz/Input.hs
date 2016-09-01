@@ -1,4 +1,15 @@
 {-# LANGUAGE DeriveDataTypeable, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
+---------------------------------------------------------------------------
+-- |
+-- Copyright   :  (C) 2016 Fumiaki Kinoshita
+-- License     :  BSD-style (see the file LICENSE)
+--
+-- Maintainer  :  Fumiaki Kinoshita <fumiexcel@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+-- Input event types
+---------------------------------------------------------------------------
 module Graphics.Holz.Input where
 import Data.Typeable
 import Data.Char
