@@ -25,9 +25,11 @@ rectangle col (V2 x0 y0) (V2 x1 y1) = (TriangleStrip,
   , Vertex (V3 x1 y1 0) (V2 1 1) (V3 0 0 1) col
   ])
 
+-- | Make a translation matrix.
 translate :: V3 Float -> M44 Float
 translate v = identity & translation .~ v
 
+-- | Draw vertices through the given model matrix.
 draw :: (MonadIO m, Given Window) => M44 Float -> (PrimitiveMode, [Vertex]) -> m ()
 draw m (prim, vs) = do
   buf <- registerVertex prim vs

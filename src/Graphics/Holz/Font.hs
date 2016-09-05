@@ -81,6 +81,7 @@ freeType = unsafePerformIO $ alloca $ \p -> do
   runFreeType $ ft_Init_FreeType p
   peek p
 
+-- | Render a character. It also returns the offset and advance.
 renderChar :: Font -> Float -> Char -> IO (Image PixelRGBA8, V2 Float, V2 Float)
 renderChar (Font face _ _) pixel ch = do
   let dpi = 300
