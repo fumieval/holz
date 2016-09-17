@@ -110,12 +110,6 @@ renderChar (Font face _ _) pixel ch = do
     , V2 (fromIntegral (V.x adv) / 64) 0)
 
 fromColorAndOpacity :: PixelRGB8 -> Image Pixel8 -> Image PixelRGBA8
-fromColorAndOpacity (PixelRGB8 r g b) (Image w h vec) = Image w h $! V.generate (w * h * 4) pix where
-    pix i = if testBit i 0
-        then if testBit i 1
-            then vec V.! unsafeShiftR i 2
-            else b
-        else if testBit i 1
-            then g
-            else r
-    {-# INLINE pix #-}
+fromColorAndOpacity (PixelRGB8 r g b) (Image w h vec) = generateImage pix w h where
+  pix i j = PixelRGBA8 r g b $ V.unsafeIndex vec $ i + j * w
+  {-# INLINE pix #-}

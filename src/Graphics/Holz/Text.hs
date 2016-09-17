@@ -95,7 +95,7 @@ getOffset :: Writing (V2 Float)
 getOffset = bone GetOffset
 
 data WriterState = WriterState
-  { _toDraw :: [(M44 Float -> M44 Float, Texture, VertexBuffer)]
+  { _toDraw :: [(V2 Float, Texture, VertexBuffer)]
   , _offset :: !(V2 Float)
   , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer, V2 Float)) }
 makeLenses ''WriterState
@@ -116,11 +116,12 @@ typewriter path = liftIO $ do
           cache . at (s, ch, col) ?= (tex, buf, adv)
           return (tex, buf, adv)
       pos <- use offset
-      toDraw %= ((translation . _xy +~ pos, tex, buf):)
+      toDraw %= ((pos, tex, buf):)
       offset .= pos + adv
     Render w m -> give w $ do
       xs <- use toDraw
-      for_ xs $ \(t, tex, buf) -> drawVertex (t m) tex buf
+      for_ xs $ \(v, tex, buf) -> drawVertex
+        (m !*! (identity & translation . _xy .~ v)) tex buf
     Clear -> do
       toDraw .= []
       offset .= V2 0 0
