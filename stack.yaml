@@ -1,0 +1,14 @@
+resolver: nightly-2016-09-04
+
+packages:
+- '.'
+
+extra-deps:
+- freetype2-0.1.1
+
+# Override default flag values for local packages and extra-deps
+flags: {}
+
+# Extra package databases containing global packages
+extra-package-dbs: []
+

@@ -15,6 +15,7 @@ import Data.Typeable
 import Data.Char
 import Linear
 
+-- | Something being pressed, or released
 data Chatter a = Up a | Down a deriving (Show, Eq, Ord, Read, Typeable, Functor, Foldable, Traversable)
 
 data Gamepad = Gamepad Int String deriving (Show, Eq, Ord, Read, Typeable)
@@ -148,6 +149,7 @@ data Key =
     | KeyMenu
     deriving (Enum, Eq, Ord, Read, Show, Typeable, Bounded)
 
+-- | Get a 'Key' corresponding to a character.
 charToKey :: Char -> Key
 charToKey ch
     | isAlpha ch = toEnum $ fromEnum KeyA + fromEnum ch - fromEnum 'A'
