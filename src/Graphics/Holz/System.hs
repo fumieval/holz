@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, Rank2Types #-}
+{-# LANGUAGE FlexibleContexts, Rank2Types, LambdaCase #-}
 ---------------------------------------------------------------------------
 -- |
 -- Copyright   :  (C) 2016 Fumiaki Kinoshita
@@ -61,6 +61,8 @@ import Codec.Picture
 import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Monad.Trans
+import Control.Monad.Trans.Iter
 import Data.Bits
 import Data.BoundingBox as Box
 import Data.IORef
@@ -133,6 +135,17 @@ withFrame win m = do
   liftIO $ GLFW.swapBuffers $ theWindow win
   liftIO GLFW.pollEvents
   return a
+
+-- | Run an 'IterT' computation on a 'Window'. It returns 'Nothing' if the window is closed.
+-- The resulting 'IterT' can be composed with ('<|>') to update multiple windows in parallel.
+iterWithWindow :: MonadIO m => Window -> (Given Window => IterT m a) -> IterT m (Maybe a)
+iterWithWindow win m = join $ withFrame win $ windowShouldClose >>= \case
+  False -> do
+    box@(Box (V2 x0 y0) (V2 x1 y1)) <- getBoundingBox
+    setProjection $ ortho x0 x1 y1 y0 (-1) 1
+    either (return . Just) (\cont -> delay $ iterWithWindow win cont)
+      <$> lift (runIterT m)
+  True -> return (return Nothing)
 
 -- | Open a window.
 openWindow :: WindowMode -> Box V2 Float -> IO Window

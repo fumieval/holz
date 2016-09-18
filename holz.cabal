@@ -25,6 +25,7 @@ library
       , containers
       , directory
       , filepath
+      , free
       , freetype2
       , gl
       , GLFW-b
