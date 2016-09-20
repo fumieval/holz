@@ -38,6 +38,7 @@ module Graphics.Holz.System (withHolz
   , setBoundingBox
   -- * Rendering
   , setProjection
+  , setOrthographic
   , drawVertex
   , drawVertexPlain
   , setDiffuse
@@ -141,11 +142,17 @@ withFrame win m = do
 iterWithWindow :: MonadIO m => Window -> (Given Window => IterT m a) -> IterT m (Maybe a)
 iterWithWindow win m = join $ withFrame win $ windowShouldClose >>= \case
   False -> do
-    box@(Box (V2 x0 y0) (V2 x1 y1)) <- getBoundingBox
-    setProjection $ ortho x0 x1 y1 y0 (-1) 1
+    setOrthographic
     either (return . Just) (\cont -> delay $ iterWithWindow win cont)
       <$> lift (runIterT m)
   True -> return (return Nothing)
+
+-- | Set orthographic projection
+setOrthographic :: (Given Window, MonadIO m) => m ()
+setOrthographic = do
+    box@(Box (V2 x0 y0) (V2 x1 y1)) <- getBoundingBox
+    setViewport $ fmap round box
+    setProjection $ ortho x0 x1 y1 y0 (-1) 1
 
 -- | Open a window.
 openWindow :: WindowMode -> Box V2 Float -> IO Window
