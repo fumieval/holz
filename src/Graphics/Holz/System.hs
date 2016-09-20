@@ -20,6 +20,9 @@ module Graphics.Holz.System (withHolz
   , withFrame
   , setTitle
   , clearColor
+  -- * IterT
+  , iterWithWindow
+  , retract
   -- * Textures
   , Texture
   , registerTexture
