@@ -9,48 +9,54 @@
 -- Portability :  non-portable
 --
 -- Text rendering class
+-- Qualified import is recommended.
 ---------------------------------------------------------------------------
 module Graphics.Holz.Text (
   typewriter
+  , WriterState(..)
+  , toDraw
+  , offset
+  , cache
   , Writing
-  , WritingBase(..)
   , Renderer
+  , runRenderer
   , render
   , clear
   , string
   , getOffset
   , simpleL
   , simpleR
-  , (..-)
   ) where
 import Codec.Picture
 import Control.Concurrent.MVar
 import Control.Lens hiding (simple)
 import Data.Foldable
 import Data.Reflection (give)
+import Data.Tuple
 import Graphics.Holz
 import Linear
 import Graphics.Holz.Vertex
 import Data.Map.Strict as Map
-import Control.Monad.Trans
-import Control.Monad.Skeleton
-import Control.Object
+import Control.Monad.IO.Class
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.State
 
-data WritingBase x where
-  TypeChar :: !Char -> !Float -> !(V4 Float) -> WritingBase ()
-  Render :: !Window -> !(M44 Float) -> WritingBase ()
-  Clear :: WritingBase ()
-  GetOffset :: WritingBase (V2 Float)
+data WriterState = WriterState
+  { font :: Font
+  , _toDraw :: [(V2 Float, Texture, VertexBuffer)]
+  , _offset :: !(V2 Float)
+  , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer, V2 Float)) }
+makeLenses ''WriterState
 
 -- | A 'Renderer' handles 'Writing' operations.
-type Renderer = MVar (Object WritingBase IO)
+type Renderer = MVar WriterState
 
 -- | The 'Writing' monad is the interface of text rendering.
 --  'string', 'render', 'clear', 'getOffset' etc through ('..-').
 --
 -- @renderer ..- 'simpleL' 12 (V4 1 1 1 1) "Hello, world" 'identity'@
 --
-type Writing = Skeleton WritingBase
+type Writing = StateT WriterState IO
 
 -- | Render a 'String'.
 -- The left edge of the baseline will be at @mat !* V4 0 0 0 1@.
@@ -76,15 +82,33 @@ simpleR s col str m = do
 
 -- | Render the text to the window, applying a model matrix.
 render :: Given Window => M44 Float -> Writing ()
-render m = bone $ Render given m
+render m = do
+  xs <- use toDraw
+  for_ xs $ \(v, tex, buf) -> drawVertex
+    (m !*! (identity & translation . _xy .~ v)) tex buf
 
 -- | Clear the text.
 clear :: Writing ()
-clear = bone Clear
+clear = do
+  toDraw .= []
+  offset .= V2 0 0
 
 -- | Type one character.
 char :: Float -> V4 Float -> Char -> Writing ()
-char s col ch = bone $ TypeChar ch s col
+char s col ch = do
+  ws <- get
+  (tex, buf, adv) <- preuse (cache . ix (s, ch, col)) >>= \case
+    Just a -> return a
+    Nothing -> do
+      (img@(Image w h _), ofs, adv) <- lift $ renderChar (font ws) s ch
+      buf <- uncurry registerVertex
+          $ rectangle col ofs (ofs + V2 (fromIntegral w) (fromIntegral h))
+      tex <- registerTexture img
+      cache . at (s, ch, col) ?= (tex, buf, adv)
+      return (tex, buf, adv)
+  pos <- use offset
+  toDraw %= ((pos, tex, buf):)
+  offset .= pos + adv
 
 -- | Write a string.
 string :: Float -> V4 Float -> String -> Writing ()
@@ -92,37 +116,13 @@ string s col = mapM_ (char s col)
 
 -- | Get the current position of writing.
 getOffset :: Writing (V2 Float)
-getOffset = bone GetOffset
-
-data WriterState = WriterState
-  { _toDraw :: [(V2 Float, Texture, VertexBuffer)]
-  , _offset :: !(V2 Float)
-  , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer, V2 Float)) }
-makeLenses ''WriterState
+getOffset = use offset
 
 -- | Create a renderer of the specified font.
 typewriter :: MonadIO m => FilePath -> m Renderer
 typewriter path = liftIO $ do
   font <- readFont path
-  newMVar $ WriterState [] zero Map.empty @~ \case
-    TypeChar ch s col -> do
-      (tex, buf, adv) <- preuse (cache . ix (s, ch, col)) >>= \case
-        Just a -> return a
-        Nothing -> do
-          (img@(Image w h _), ofs, adv) <- lift $ renderChar font s ch
-          buf <- uncurry registerVertex
-              $ rectangle col ofs (ofs + V2 (fromIntegral w) (fromIntegral h))
-          tex <- registerTexture img
-          cache . at (s, ch, col) ?= (tex, buf, adv)
-          return (tex, buf, adv)
-      pos <- use offset
-      toDraw %= ((pos, tex, buf):)
-      offset .= pos + adv
-    Render w m -> give w $ do
-      xs <- use toDraw
-      for_ xs $ \(v, tex, buf) -> drawVertex
-        (m !*! (identity & translation . _xy .~ v)) tex buf
-    Clear -> do
-      toDraw .= []
-      offset .= V2 0 0
-    GetOffset -> use offset
+  newMVar $ WriterState font [] zero Map.empty
+
+runRenderer :: MonadIO m => Renderer -> Writing a -> m a
+runRenderer v m = liftIO $ modifyMVar v $ fmap swap . runStateT m

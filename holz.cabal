@@ -33,9 +33,7 @@ library
       , JuicyPixels
       , lens
       , linear
-      , monad-skeleton
       , mtl
-      , objective
       , random
       , reflection
       , template-haskell
