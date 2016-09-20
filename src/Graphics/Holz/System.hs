@@ -54,6 +54,8 @@ module Graphics.Holz.System (withHolz
   , keyPress
   , getCursorPos
   , mousePress
+  , typedString
+  , typedKeys
   -- * Misc
   , takeScreenshot
   , enableCursor
@@ -102,6 +104,8 @@ data Window = Window
   , mouseButtonHandlers :: {-# UNPACK #-} !(IORef (Chatter Int -> IO ()))
   , mouseCursorHandlers :: {-# UNPACK #-} !(IORef (V2 Float -> IO ()))
   , mouseScrollHandlers :: {-# UNPACK #-} !(IORef (V2 Float -> IO ()))
+  , keysTyped :: !(IORef ([Key], [Key]))
+  , charactersTyped :: !(IORef ([Char], [Char]))
   }
 
 -- | Set a handler for key events.
@@ -136,6 +140,8 @@ withFrame win m = do
   liftIO $ glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
   a <- give win m
+  liftIO $ modifyIORef' (charactersTyped win) $ \(_, buf) -> (reverse buf, [])
+  liftIO $ modifyIORef' (keysTyped win) $ \(_, buf) -> (reverse buf, [])
   liftIO $ GLFW.swapBuffers $ theWindow win
   liftIO GLFW.pollEvents
   return a
@@ -190,6 +196,8 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   hb <- newIORef (const (return ()))
   hc <- newIORef (const (return ()))
   hs <- newIORef (const (return ()))
+  refKeys <- newIORef ([], [])
+  refChars <- newIORef ([], [])
 
   with (V4 1 1 1 1 :: V4 Float) $ \ptr -> do
       glUniform4fv locD 1 (castPtr ptr)
@@ -201,12 +209,13 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
       modifyIORef rbox $ Box.size zero .~ fmap fromIntegral (V2 w h)
       glViewport 0 0 (fromIntegral w) (fromIntegral h)
 
-  GLFW.setKeyCallback win $ Just $ keyCallback hk
+  GLFW.setKeyCallback win $ Just $ keyCallback refKeys hk
   GLFW.setMouseButtonCallback win $ Just $ mouseButtonCallback hb
   GLFW.setCursorPosCallback win $ Just $ cursorPosCallback hc
   GLFW.setScrollCallback win $ Just $ scrollCallback hs
+  GLFW.setCharCallback win $ Just $ \_ ch -> modifyIORef' refChars $ \(str, buf) -> (str, ch : buf)
 
-  return $ Window rbox win prog locM locP locD locS hk hb hc hs
+  return $ Window rbox win prog locM locP locD locS hk hb hc hs refKeys refChars
 
 -- | Close a window.
 closeWindow :: Window -> IO ()
@@ -496,12 +505,15 @@ takeScreenshot = liftIO $ do
 setTitle :: (Given Window, MonadIO m) => String -> m ()
 setTitle str = liftIO $ GLFW.setWindowTitle (theWindow given) str
 
-keyCallback :: IORef (Chatter Key -> IO ()) -> GLFW.KeyCallback
-keyCallback h _ k _ st _ = do
+keyCallback :: IORef ([Key], [Key]) -> IORef (Chatter Key -> IO ()) -> GLFW.KeyCallback
+keyCallback ref h _ k _ st _ = do
   m <- readIORef h
   m $ case st of
     GLFW.KeyState'Released -> Up (toEnum . fromEnum $ k :: Key)
     _ -> Down (toEnum . fromEnum $ k :: Key)
+  case st of
+    GLFW.KeyState'Released -> return ()
+    _ -> modifyIORef' ref $ \(keys, buf) -> (keys, toEnum (fromEnum k) : buf)
 
 mouseButtonCallback :: IORef (Chatter Int -> IO ()) -> GLFW.MouseButtonCallback
 mouseButtonCallback h _ btn st _ = do
@@ -527,6 +539,12 @@ keyPress k = liftIO $ fmap (/=GLFW.KeyState'Released)
 mousePress :: (Given Window, MonadIO m) => Int -> m Bool
 mousePress k = liftIO $ fmap (/=GLFW.MouseButtonState'Released)
   $ GLFW.getMouseButton (theWindow given) (toEnum k)
+
+typedString :: (Given Window, MonadIO m) => m String
+typedString = liftIO $ fst <$> readIORef (charactersTyped given)
+
+typedKeys :: (Given Window, MonadIO m) => m [Key]
+typedKeys = liftIO $ fst <$> readIORef (keysTyped given)
 
 getCursorPos :: (Given Window, MonadIO m) => m (V2 Float)
 getCursorPos = liftIO $ fmap realToFrac <$> uncurry V2 <$> GLFW.getCursorPos (theWindow given)
