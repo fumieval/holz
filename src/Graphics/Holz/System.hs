@@ -554,7 +554,7 @@ overPtr f = alloca $ \p -> f p >> peek p
 {-# INLINE overPtr #-}
 
 vertexShaderSource :: String
-vertexShaderSource = "#version 400\n\
+vertexShaderSource = "#version 330\n\
   \uniform mat4 projection; \
   \uniform mat4 model; \
   \in vec3 in_Position; \
@@ -574,7 +574,7 @@ vertexShaderSource = "#version 400\n\
   \}"
 
 fragmentShaderSource :: String
-fragmentShaderSource = "#version 400\n\
+fragmentShaderSource = "#version 330\n\
   \out vec4 fragColor; \
   \in vec2 texUV; \
   \in vec3 normal; \
