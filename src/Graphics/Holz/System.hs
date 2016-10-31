@@ -361,7 +361,7 @@ instance Eq VertexBuffer where
 instance Ord VertexBuffer where
   VertexBuffer i _ _ _ `compare` VertexBuffer j _ _ _ = compare i j
 
-data Texture = Texture !GLuint deriving (Eq, Ord)
+newtype Texture = Texture GLuint deriving (Eq, Ord)
 
 -- | Send an image into the graphics driver.
 registerTexture :: MonadIO m => Image PixelRGBA8 -> m Texture
