@@ -38,8 +38,9 @@ import Linear
 import Graphics.Holz.Vertex
 import Data.Map.Strict as Map
 import Control.Monad.IO.Class
+import Control.Monad.Reader
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.State
+import Control.Monad.Trans.State.Strict
 
 data WriterState = WriterState
   { font :: Font
@@ -56,12 +57,11 @@ type Renderer = MVar WriterState
 --
 -- @renderer ..- 'simpleL' 12 (V4 1 1 1 1) "Hello, world" 'identity'@
 --
-type Writing = StateT WriterState IO
+type Writing = StateT WriterState (ReaderT Window IO)
 
 -- | Render a 'String'.
 -- The left edge of the baseline will be at @mat !* V4 0 0 0 1@.
-simpleL :: Given Window
-  => Float -- Size
+simpleL :: Float -- Size
   -> V4 Float -- ^ Color (RGBA)
   -> String -- String
   -> M44 Float -- Matrix
@@ -73,7 +73,7 @@ simpleL s col str m = do
 
 -- | Draw a 'String', right-aligned.
 -- The right edge of the baseline will be at @mat !* V4 0 0 0 1@.
-simpleR :: Given Window => Float -> V4 Float -> String -> M44 Float -> Writing ()
+simpleR :: Float -> V4 Float -> String -> M44 Float -> Writing ()
 simpleR s col str m = do
   string s col str
   V2 x y <- getOffset
@@ -81,7 +81,7 @@ simpleR s col str m = do
   clear
 
 -- | Render the text to the window, applying a model matrix.
-render :: Given Window => M44 Float -> Writing ()
+render :: M44 Float -> Writing ()
 render m = do
   xs <- use toDraw
   for_ xs $ \(v, tex, buf) -> drawVertex
@@ -124,5 +124,6 @@ typewriter path = liftIO $ do
   font <- readFont path
   newMVar $ WriterState font [] zero Map.empty
 
-runRenderer :: MonadIO m => Renderer -> Writing a -> m a
-runRenderer v m = liftIO $ modifyMVar v $ fmap swap . runStateT m
+runRenderer :: MonadHolz m => Renderer -> Writing a -> m a
+runRenderer v m = ask >>= \w -> liftIO $ modifyMVar v
+  $ \s -> fmap swap $ runReaderT (runStateT m s) w

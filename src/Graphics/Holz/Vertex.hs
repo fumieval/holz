@@ -30,7 +30,7 @@ translate :: V3 Float -> M44 Float
 translate v = identity & translation .~ v
 
 -- | Draw vertices through the given model matrix.
-draw :: (MonadIO m, Given Window) => M44 Float -> (PrimitiveMode, [Vertex]) -> m ()
+draw :: MonadHolz m => M44 Float -> (PrimitiveMode, [Vertex]) -> m ()
 draw m (prim, vs) = do
   buf <- registerVertex prim vs
   drawVertexPlain m buf
