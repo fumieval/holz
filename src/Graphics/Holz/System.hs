@@ -115,7 +115,7 @@ type MonadHolz m = (MonadIO m, MonadReader Window m)
 
 newtype HolzT m a = HolzT { unHolzT :: IterT (ReaderT Window m) a }
   deriving (Functor, Applicative, Alternative
-    , Monad, MonadPlus, MonadReader Window, MonadIO)
+    , Monad, MonadPlus, MonadReader Window, MonadIO, MonadFree Identity)
 
 instance MonadTrans HolzT where
   lift m = HolzT $ lift $ lift m
