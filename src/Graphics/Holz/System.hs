@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts, Rank2Types, LambdaCase, GeneralizedNewtypeDeriving, ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts, Rank2Types, LambdaCase, GeneralizedNewtypeDeriving, ConstraintKinds, ScopedTypeVariables #-}
 ---------------------------------------------------------------------------
 -- |
 -- Copyright   :  (C) 2016 Fumiaki Kinoshita
@@ -32,10 +32,9 @@ module Graphics.Holz.System (withHolz
   , releaseTexture
   , blankTexture
   -- * Vertices
-  , Vertex(..)
   , PrimitiveMode(..)
   , VertexBuffer
-  , registerVertex
+  , makeVertexBuffer
   , releaseVertex
   -- * Drawing region
   , setViewport
@@ -63,6 +62,7 @@ module Graphics.Holz.System (withHolz
   , enableCursor
   , disableCursor
   , hideCursor
+  , overPtr
   ) where
 
 import Codec.Picture
@@ -261,26 +261,6 @@ compileShader src shader = do
     glGetShaderInfoLog shader l nullPtr ptr
     peekCString ptr >>= putStrLn
 
-vertexAttributes :: IO ()
-vertexAttributes = do
-  glVertexAttribPointer 0 3 GL_FLOAT GL_FALSE stride nullPtr
-  glEnableVertexAttribArray 0
-
-  glVertexAttribPointer 1 2 GL_FLOAT GL_FALSE stride pos'
-  glEnableVertexAttribArray 1
-
-  glVertexAttribPointer 2 3 GL_FLOAT GL_FALSE stride pos''
-  glEnableVertexAttribArray 2
-
-  glVertexAttribPointer 3 4 GL_FLOAT GL_FALSE stride pos'''
-  glEnableVertexAttribArray 3
-  where
-    stride = fromIntegral $ sizeOf (undefined :: Vertex)
-    pos' = nullPtr `plusPtr` sizeOf (0 :: V3 CFloat)
-    pos'' = pos' `plusPtr` sizeOf (0 :: V2 CFloat)
-    pos''' = pos'' `plusPtr` sizeOf (0 :: V3 CFloat)
-{-# INLINE vertexAttributes #-}
-
 initializeGL :: IO GLuint
 initializeGL = do
   vertexShader <- glCreateShader GL_VERTEX_SHADER
@@ -329,44 +309,6 @@ convPrimitiveMode TriangleFan = GL_TRIANGLE_FAN
 convPrimitiveMode TriangleStrip = GL_TRIANGLE_STRIP
 convPrimitiveMode LineLoop = GL_LINE_LOOP
 {-# INLINE convPrimitiveMode #-}
-
-data Vertex = Vertex
-    {-# UNPACK #-} !(V3 Float) -- x, y, z
-    {-# UNPACK #-} !(V2 Float) -- u, v
-    {-# UNPACK #-} !(V3 Float) -- normal
-    {-# UNPACK #-} !(V4 Float) -- r, g, b, a
-
-align1 :: Int
-align1 = sizeOf (undefined :: V3 Float)
-
-align2 :: Int
-align2 = align1 + sizeOf (undefined :: V2 Float)
-
-align3 :: Int
-align3 = align2 + sizeOf (undefined :: V3 Float)
-
-instance Storable Vertex where
-  sizeOf _ = sizeOf (undefined :: V3 Float)
-      + sizeOf (undefined :: V2 Float)
-      + sizeOf (undefined :: V3 Float)
-      + sizeOf (undefined :: V4 Float)
-  {-# INLINE sizeOf #-}
-  alignment _ = 0
-  {-# INLINE alignment #-}
-  peek ptr = Vertex
-    <$> peek ptr'
-    <*> peek (ptr' `plusPtr` align1)
-    <*> peek (ptr' `plusPtr` align2)
-    <*> peek (ptr' `plusPtr` align3)
-    where ptr' = castPtr ptr
-  {-# INLINE peek #-}
-  poke ptr (Vertex v t n c) = do
-    poke ptr' v
-    poke (ptr' `plusPtr` align1) t
-    poke (ptr' `plusPtr` align2) n
-    poke (ptr' `plusPtr` align3) c
-    where ptr' = castPtr ptr
-  {-# INLINE poke #-}
 
 data VertexBuffer = VertexBuffer !GLuint !GLuint !GLenum !GLsizei
 
@@ -427,15 +369,15 @@ releaseTexture :: Texture -> IO ()
 releaseTexture (Texture i) = with i $ glDeleteTextures 1
 
 -- | Send vertices to the graphics driver.
-registerVertex :: MonadIO m => PrimitiveMode -> [Vertex] -> m VertexBuffer
-registerVertex mode vs = liftIO $ do
+makeVertexBuffer :: forall m v. (Storable v, MonadIO m)
+  => IO () -> PrimitiveMode -> V.Vector v -> m VertexBuffer
+makeVertexBuffer conf mode va = liftIO $ do
   vao <- overPtr $ glGenVertexArrays 1
   glBindVertexArray vao
   vbo <- overPtr $ glGenBuffers 1
   glBindBuffer GL_ARRAY_BUFFER vbo
-  vertexAttributes
-  let va = V.fromList vs
-  let siz = fromIntegral $ V.length va * sizeOf (undefined :: Vertex)
+  conf
+  let siz = fromIntegral $ V.length va * sizeOf (undefined :: v)
   V.unsafeWith va $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
   let vb = VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length va)
   -- addFinalizer vb $ do
