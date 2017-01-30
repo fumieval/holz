@@ -41,11 +41,7 @@ module Graphics.Holz.System (withHolz
   , getBoundingBox
   , setBoundingBox
   -- * Rendering
-  , setProjection
-  , setOrthographic
-  , drawVertex
-  , drawVertexPlain
-  , setDiffuse
+  , drawVertexBuffer
   -- * Input (callback)
   , linkKeyboard
   , linkMouseButton
@@ -62,7 +58,10 @@ module Graphics.Holz.System (withHolz
   , enableCursor
   , disableCursor
   , hideCursor
+  -- * Internal
   , overPtr
+  , getUniform
+  , compileShader
   ) where
 
 import Codec.Picture
@@ -98,11 +97,6 @@ import Control.Applicative
 data Window = Window
   { refRegion :: {-# UNPACK #-} !(IORef (Box V2 Float))
   , theWindow :: {-# UNPACK #-} !GLFW.Window
-  , theProgram :: {-# UNPACK #-} !GLuint
-  , locationModel :: {-# UNPACK #-} !GLint
-  , locationProjection :: {-# UNPACK #-} !GLint
-  , locationDiffuse :: {-# UNPACK #-} !GLint
-  , locationSpecular :: {-# UNPACK #-} !GLint
   , keyboardHandlers :: {-# UNPACK #-} !(IORef (Chatter Key -> IO ()))
   , mouseButtonHandlers :: {-# UNPACK #-} !(IORef (Chatter Int -> IO ()))
   , mouseCursorHandlers :: {-# UNPACK #-} !(IORef (V2 Float -> IO ()))
@@ -166,17 +160,9 @@ runHolzT win = flip runReaderT win . go . unHolzT where
   go m = join $ withFrame $ windowShouldClose >>= \case
     False -> do
       w <- ask
-      setOrthographic
       either (return . Just) (delay . go)
         <$> lift (lift $ runIterT m `runReaderT` w)
     True -> return (return Nothing)
-
--- | Set orthographic projection
-setOrthographic :: MonadHolz m => m ()
-setOrthographic = do
-    box@(Box (V2 x0 y0) (V2 x1 y1)) <- getBoundingBox
-    setViewport $ fmap round box
-    setProjection $ ortho x0 x1 y1 y0 (-1) 1
 
 -- | Open a window.
 openWindow :: WindowMode -> Box V2 Float -> IO Window
@@ -199,24 +185,16 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
 
   (fw, fh) <- GLFW.getFramebufferSize win
 
-  prog <- initializeGL
+  initializeGL
 
   rbox <- newIORef $ bbox & Box.size zero .~ fmap fromIntegral (V2 fw fh)
 
-  locM <- getUniform prog "model"
-  locP <- getUniform prog "projection"
-  locD <- getUniform prog "diffuse"
-  locS <- getUniform prog "specular"
   hk <- newIORef (const (return ()))
   hb <- newIORef (const (return ()))
   hc <- newIORef (const (return ()))
   hs <- newIORef (const (return ()))
   refKeys <- newIORef ([], [])
   refChars <- newIORef ([], [])
-
-  with (V4 1 1 1 1 :: V4 Float) $ \ptr -> do
-      glUniform4fv locD 1 (castPtr ptr)
-      glUniform4fv locS 1 (castPtr ptr)
 
   GLFW.setFramebufferSizeCallback win $ Just
     $ \_ w h -> do
@@ -230,7 +208,7 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   GLFW.setScrollCallback win $ Just $ scrollCallback hs
   GLFW.setCharCallback win $ Just $ \_ ch -> modifyIORef' refChars $ \(str, buf) -> (str, ch : buf)
 
-  return $ Window rbox win prog locM locP locD locS hk hb hc hs refKeys refChars
+  return $ Window rbox win hk hb hc hs refKeys refChars
 
 -- | Close a window.
 closeWindow :: Window -> IO ()
@@ -261,32 +239,8 @@ compileShader src shader = do
     glGetShaderInfoLog shader l nullPtr ptr
     peekCString ptr >>= putStrLn
 
-initializeGL :: IO GLuint
+initializeGL :: IO ()
 initializeGL = do
-  vertexShader <- glCreateShader GL_VERTEX_SHADER
-  fragmentShader <- glCreateShader GL_FRAGMENT_SHADER
-  compileShader vertexShaderSource vertexShader
-  compileShader fragmentShaderSource fragmentShader
-
-  shaderProg <- glCreateProgram
-  glAttachShader shaderProg vertexShader
-  glAttachShader shaderProg fragmentShader
-
-  withCString "in_Position" $ glBindAttribLocation shaderProg 0
-  withCString "in_UV" $ glBindAttribLocation shaderProg 1
-  withCString "in_Normal" $ glBindAttribLocation shaderProg 2
-  withCString "in_Color" $ glBindAttribLocation shaderProg 3
-
-  glLinkProgram shaderProg
-  glUseProgram shaderProg
-
-  linked <- overPtr (glGetProgramiv shaderProg GL_LINK_STATUS)
-  when (linked == GL_FALSE) $ do
-    maxLength <- overPtr (glGetProgramiv shaderProg GL_INFO_LOG_LENGTH)
-    allocaArray (fromIntegral maxLength) $ \ptr -> do
-      glGetProgramInfoLog shaderProg maxLength nullPtr ptr
-      peekCString ptr >>= putStrLn
-
   glEnable GL_BLEND
   glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA
   glClearColor 0 0 0 1
@@ -296,8 +250,6 @@ initializeGL = do
   glDisable GL_CULL_FACE
   glEnable GL_DEPTH_TEST
   glEnable GL_LINE_SMOOTH
-
-  return shaderProg
 
 getUniform :: GLuint -> String -> IO GLint
 getUniform prog str = withCString str $ glGetUniformLocation prog
@@ -391,31 +343,17 @@ releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
   with vao $ glDeleteVertexArrays 1
   with vbo $ glDeleteBuffers 1
 
--- | Set the projection matrix.
-setProjection :: MonadHolz m => M44 Float -> m ()
-setProjection proj =ask >>= \w ->  liftIO $ with proj
-  $ \ptr -> glUniformMatrix4fv (locationProjection w) 1 1 $ castPtr ptr
-
 -- | Set a viewport.
-setViewport :: MonadHolz m => Box V2 Int -> m ()
+setViewport :: MonadIO m => Box V2 Int -> m ()
 setViewport (Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ glViewport
   (fromIntegral x0)
   (fromIntegral y0)
   (fromIntegral $ x1 - x0)
   (fromIntegral $ y1 - y0)
 
--- | Set a diffuse color.
-setDiffuse :: MonadHolz m => V4 Float -> m ()
-setDiffuse col = ask >>= \w -> liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse w) 1 (castPtr ptr)
-
-drawVertexPlain :: MonadHolz m => M44 Float -> VertexBuffer -> m ()
-drawVertexPlain m = drawVertex m blankTexture
-{-# INLINE drawVertexPlain #-}
-
 -- | Draw 'VertexBuffer' using the w 'Texture' and a model matrix.
-drawVertex :: MonadHolz m => M44 Float -> Texture -> VertexBuffer -> m ()
-drawVertex mat (Texture tex) (VertexBuffer vao vbo m n) = ask >>= \w -> liftIO $ do
-  with mat $ \p -> glUniformMatrix4fv (locationModel w) 1 1 (castPtr p)
+drawVertexBuffer :: MonadIO m => Texture -> VertexBuffer -> m ()
+drawVertexBuffer (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
   glBindTexture GL_TEXTURE_2D tex
   glBindVertexArray vao
   glBindBuffer GL_ARRAY_BUFFER vbo
@@ -434,7 +372,7 @@ enableCursor :: MonadHolz m => m ()
 enableCursor = ask >>= \w -> liftIO $ GLFW.setCursorInputMode (theWindow w) GLFW.CursorInputMode'Normal
 
 -- | Set the background color.
-clearColor :: MonadHolz m => V4 Float -> m ()
+clearColor :: MonadIO m => V4 Float -> m ()
 clearColor (V4 r g b a) = liftIO $ glClearColor (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
 
 -- | Set the size of the window and the resolution.
@@ -510,37 +448,3 @@ getCursorPos = ask >>= \w -> liftIO $ fmap realToFrac <$> uncurry V2 <$> GLFW.ge
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
 overPtr f = alloca $ \p -> f p >> peek p
 {-# INLINE overPtr #-}
-
-vertexShaderSource :: String
-vertexShaderSource = "#version 330\n\
-  \uniform mat4 projection; \
-  \uniform mat4 model; \
-  \in vec3 in_Position; \
-  \in vec2 in_UV; \
-  \in vec3 in_Normal; \
-  \in vec4 in_Color; \
-  \out vec2 texUV; \
-  \out vec3 normal; \
-  \out vec4 viewPos; \
-  \out vec4 color; \
-  \void main(void) { \
-  \  viewPos = model * vec4(in_Position, 1.0); \
-  \  gl_Position = projection * viewPos; \
-  \  texUV = in_UV; \
-  \  normal = in_Normal;\
-  \  color = in_Color;\
-  \}"
-
-fragmentShaderSource :: String
-fragmentShaderSource = "#version 330\n\
-  \out vec4 fragColor; \
-  \in vec2 texUV; \
-  \in vec3 normal; \
-  \in vec4 viewPos; \
-  \in vec4 color; \
-  \uniform sampler2D tex; \
-  \uniform vec4 diffuse; \
-  \uniform vec3 specular; \
-  \void main(void){ \
-  \  fragColor = texture(tex, texUV) * color * diffuse; \
-  \}"

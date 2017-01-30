@@ -57,7 +57,7 @@ type Renderer = MVar WriterState
 --
 -- @renderer ..- 'simpleL' 12 (V4 1 1 1 1) "Hello, world" 'identity'@
 --
-type Writing = StateT WriterState (ReaderT Window IO)
+type Writing = StateT WriterState (ReaderT Shader IO)
 
 -- | Render a 'String'.
 -- The left edge of the baseline will be at @mat !* V4 0 0 0 1@.
@@ -124,6 +124,6 @@ typewriter path = liftIO $ do
   font <- readFont path
   newMVar $ WriterState font [] zero Map.empty
 
-runRenderer :: MonadHolz m => Renderer -> Writing a -> m a
+runRenderer :: MonadShader m => Renderer -> Writing a -> m a
 runRenderer v m = ask >>= \w -> liftIO $ modifyMVar v
   $ \s -> fmap swap $ runReaderT (runStateT m s) w

@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, RecordWildCards, ConstraintKinds #-}
 ---------------------------------------------------------------------------
 -- |
 -- Copyright   :  (C) 2016 Fumiaki Kinoshita
@@ -12,9 +12,10 @@
 ---------------------------------------------------------------------------
 module Graphics.Holz.Vertex where
 import Control.Lens
+import Control.Monad.Reader
+import Foreign
+import Foreign.C.String
 import Foreign.C.Types
-import Foreign.Ptr
-import Foreign.Storable
 import Graphics.GL
 import Graphics.Holz
 import Linear
@@ -95,8 +96,114 @@ translate :: V3 Float -> M44 Float
 translate v = identity & translation .~ v
 
 -- | Draw vertices through the given model matrix.
-draw :: MonadHolz m => M44 Float -> (PrimitiveMode, [Vertex]) -> m ()
+draw :: (MonadShader m) => M44 Float -> (PrimitiveMode, [Vertex]) -> m ()
 draw m (prim, vs) = do
   buf <- registerVertex prim vs
   drawVertexPlain m buf
   releaseVertex buf
+
+data Shader = Shader
+  { shaderProg :: {-# UNPACK #-} !GLuint
+  , locationModel :: {-# UNPACK #-} !GLint
+  , locationProjection :: {-# UNPACK #-} !GLint
+  , locationDiffuse :: {-# UNPACK #-} !GLint
+  , locationSpecular :: {-# UNPACK #-} !GLint
+  }
+
+type MonadShader m = (MonadIO m, MonadReader Shader m)
+
+-- | Set the projection matrix.
+setProjection :: MonadShader m => M44 Float -> m ()
+setProjection proj = ask >>= \w -> liftIO $ with proj
+  $ \ptr -> glUniformMatrix4fv (locationProjection w) 1 1 $ castPtr ptr
+
+-- | Set a diffuse color.
+setDiffuse :: MonadShader m => V4 Float -> m ()
+setDiffuse col = ask >>= \w -> liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse w) 1 (castPtr ptr)
+
+drawVertex :: MonadShader m => M44 Float -> Texture -> VertexBuffer -> m ()
+drawVertex mat tex vb = ask >>= \w -> liftIO $ do
+  with mat $ \p -> glUniformMatrix4fv (locationModel w) 1 1 (castPtr p)
+  drawVertexBuffer tex vb
+
+drawVertexPlain :: MonadShader m => M44 Float -> VertexBuffer -> m ()
+drawVertexPlain m = drawVertex m blankTexture
+{-# INLINE drawVertexPlain #-}
+
+-- | Set orthographic projection
+setOrthographic :: MonadHolz m => ReaderT Shader m ()
+setOrthographic = do
+    box@(Box (V2 x0 y0) (V2 x1 y1)) <- lift getBoundingBox
+    setViewport $ fmap round box
+    setProjection $ ortho x0 x1 y1 y0 (-1) 1
+
+makeShader :: IO Shader
+makeShader = do
+  vertexShader <- glCreateShader GL_VERTEX_SHADER
+  fragmentShader <- glCreateShader GL_FRAGMENT_SHADER
+  compileShader vertexShaderSource vertexShader
+  compileShader fragmentShaderSource fragmentShader
+
+  shaderProg <- glCreateProgram
+  glAttachShader shaderProg vertexShader
+  glAttachShader shaderProg fragmentShader
+
+  withCString "in_Position" $ glBindAttribLocation shaderProg 0
+  withCString "in_UV" $ glBindAttribLocation shaderProg 1
+  withCString "in_Normal" $ glBindAttribLocation shaderProg 2
+  withCString "in_Color" $ glBindAttribLocation shaderProg 3
+
+  glLinkProgram shaderProg
+  glUseProgram shaderProg
+
+  linked <- overPtr (glGetProgramiv shaderProg GL_LINK_STATUS)
+  when (linked == GL_FALSE) $ do
+    maxLength <- overPtr (glGetProgramiv shaderProg GL_INFO_LOG_LENGTH)
+    allocaArray (fromIntegral maxLength) $ \ptr -> do
+      glGetProgramInfoLog shaderProg maxLength nullPtr ptr
+      peekCString ptr >>= putStrLn
+
+  locationModel <- getUniform shaderProg "model"
+  locationProjection <- getUniform shaderProg "projection"
+  locationDiffuse <- getUniform shaderProg "diffuse"
+  locationSpecular <- getUniform shaderProg "specular"
+
+  with (V4 1 1 1 1 :: V4 Float) $ \ptr -> do
+      glUniform4fv locationDiffuse 1 (castPtr ptr)
+      glUniform4fv locationSpecular 1 (castPtr ptr)
+
+  return Shader{..}
+
+vertexShaderSource :: String
+vertexShaderSource = "#version 330\n\
+  \uniform mat4 projection; \
+  \uniform mat4 model; \
+  \in vec3 in_Position; \
+  \in vec2 in_UV; \
+  \in vec3 in_Normal; \
+  \in vec4 in_Color; \
+  \out vec2 texUV; \
+  \out vec3 normal; \
+  \out vec4 viewPos; \
+  \out vec4 color; \
+  \void main(void) { \
+  \  viewPos = model * vec4(in_Position, 1.0); \
+  \  gl_Position = projection * viewPos; \
+  \  texUV = in_UV; \
+  \  normal = in_Normal;\
+  \  color = in_Color;\
+  \}"
+
+fragmentShaderSource :: String
+fragmentShaderSource = "#version 330\n\
+  \out vec4 fragColor; \
+  \in vec2 texUV; \
+  \in vec3 normal; \
+  \in vec4 viewPos; \
+  \in vec4 color; \
+  \uniform sampler2D tex; \
+  \uniform vec4 diffuse; \
+  \uniform vec3 specular; \
+  \void main(void){ \
+  \  fragColor = texture(tex, texUV) * color * diffuse; \
+  \}"
