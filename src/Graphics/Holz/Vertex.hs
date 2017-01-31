@@ -1,4 +1,10 @@
-{-# LANGUAGE FlexibleContexts, RecordWildCards, ConstraintKinds #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
 ---------------------------------------------------------------------------
 -- |
 -- Copyright   :  (C) 2016 Fumiaki Kinoshita
@@ -11,6 +17,8 @@
 -- Simple drawing operations
 ---------------------------------------------------------------------------
 module Graphics.Holz.Vertex where
+
+import Control.Applicative
 import Control.Lens
 import Control.Monad.Reader
 import Foreign
@@ -19,7 +27,9 @@ import Foreign.C.Types
 import Graphics.GL
 import Graphics.Holz
 import Linear
+import Control.Monad.Free.Class
 import Control.Monad.IO.Class
+import Control.Monad.Reader.Class
 import qualified Data.Vector.Storable as V
 
 data Vertex = Vertex
@@ -96,7 +106,7 @@ translate :: V3 Float -> M44 Float
 translate v = identity & translation .~ v
 
 -- | Draw vertices through the given model matrix.
-draw :: (MonadShader m) => M44 Float -> (PrimitiveMode, [Vertex]) -> m ()
+draw :: MonadIO m => M44 Float -> (PrimitiveMode, [Vertex]) -> ShaderT m ()
 draw m (prim, vs) = do
   buf <- registerVertex prim vs
   drawVertexPlain m buf
@@ -110,32 +120,51 @@ data Shader = Shader
   , locationSpecular :: {-# UNPACK #-} !GLint
   }
 
-type MonadShader m = (MonadIO m, MonadReader Shader m)
+newtype ShaderT m a = ShaderT { unShaderT :: ReaderT Shader m a }
+  deriving (Functor, Applicative, Monad, Alternative, MonadPlus)
+
+instance MonadIO m => MonadIO (ShaderT m) where
+  liftIO = ShaderT . liftIO
+
+instance MonadTrans ShaderT where
+  lift = ShaderT . lift
+
+instance MonadReader r m => MonadReader r (ShaderT m) where
+  ask = ShaderT $ lift ask
+  local f = ShaderT . mapReaderT (local f) . unShaderT
+
+instance (Functor f, MonadFree f m) => MonadFree f (ShaderT m) where
+  wrap = ShaderT . wrap . fmap unShaderT
 
 -- | Set the projection matrix.
-setProjection :: MonadShader m => M44 Float -> m ()
-setProjection proj = ask >>= \w -> liftIO $ with proj
+setProjection :: MonadIO m => M44 Float -> ShaderT m ()
+setProjection proj = ShaderT ask >>= \w -> liftIO $ with proj
   $ \ptr -> glUniformMatrix4fv (locationProjection w) 1 1 $ castPtr ptr
 
 -- | Set a diffuse color.
-setDiffuse :: MonadShader m => V4 Float -> m ()
-setDiffuse col = ask >>= \w -> liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse w) 1 (castPtr ptr)
+setDiffuse :: MonadIO m => V4 Float -> ShaderT m ()
+setDiffuse col = ShaderT ask >>= \w -> liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse w) 1 (castPtr ptr)
 
-drawVertex :: MonadShader m => M44 Float -> Texture -> VertexBuffer -> m ()
-drawVertex mat tex vb = ask >>= \w -> liftIO $ do
+drawVertex :: MonadIO m => M44 Float -> Texture -> VertexBuffer -> ShaderT m ()
+drawVertex mat tex vb = ShaderT ask >>= \w -> liftIO $ do
   with mat $ \p -> glUniformMatrix4fv (locationModel w) 1 1 (castPtr p)
   drawVertexBuffer tex vb
 
-drawVertexPlain :: MonadShader m => M44 Float -> VertexBuffer -> m ()
+drawVertexPlain :: MonadIO m => M44 Float -> VertexBuffer -> ShaderT m ()
 drawVertexPlain m = drawVertex m blankTexture
 {-# INLINE drawVertexPlain #-}
 
 -- | Set orthographic projection
-setOrthographic :: MonadHolz m => ReaderT Shader m ()
+setOrthographic :: MonadHolz m => ShaderT m ()
 setOrthographic = do
     box@(Box (V2 x0 y0) (V2 x1 y1)) <- lift getBoundingBox
     setViewport $ fmap round box
     setProjection $ ortho x0 x1 y1 y0 (-1) 1
+
+runShaderT :: MonadIO m => Shader -> ShaderT m a -> m a
+runShaderT s (ShaderT m) = do
+  glUseProgram $ shaderProg s
+  runReaderT m s
 
 makeShader :: IO Shader
 makeShader = do

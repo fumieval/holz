@@ -57,7 +57,7 @@ type Renderer = MVar WriterState
 --
 -- @renderer ..- 'simpleL' 12 (V4 1 1 1 1) "Hello, world" 'identity'@
 --
-type Writing = StateT WriterState (ReaderT Shader IO)
+type Writing = StateT WriterState (ShaderT IO)
 
 -- | Render a 'String'.
 -- The left edge of the baseline will be at @mat !* V4 0 0 0 1@.
@@ -84,7 +84,7 @@ simpleR s col str m = do
 render :: M44 Float -> Writing ()
 render m = do
   xs <- use toDraw
-  for_ xs $ \(v, tex, buf) -> drawVertex
+  for_ xs $ \(v, tex, buf) -> lift $ drawVertex
     (m !*! (identity & translation . _xy .~ v)) tex buf
 
 -- | Clear the text.
@@ -124,6 +124,6 @@ typewriter path = liftIO $ do
   font <- readFont path
   newMVar $ WriterState font [] zero Map.empty
 
-runRenderer :: MonadShader m => Renderer -> Writing a -> m a
-runRenderer v m = ask >>= \w -> liftIO $ modifyMVar v
-  $ \s -> fmap swap $ runReaderT (runStateT m s) w
+runRenderer :: MonadIO m => Renderer -> Writing a -> ShaderT m a
+runRenderer v m = ShaderT ask >>= \w -> liftIO $ modifyMVar v
+  $ \s -> fmap swap $ runShaderT w $ runStateT m s
