@@ -18,7 +18,6 @@ module Graphics.Holz.Font
   , renderChar
   ) where
 
-import Control.Applicative
 import Control.Monad.IO.Class
 import Control.Monad
 import Data.BoundingBox
@@ -40,7 +39,6 @@ import Foreign.ForeignPtr
 import Foreign.Ptr
 import System.IO.Unsafe
 import Codec.Picture
-import Data.Bits
 
 -- | Font object
 data Font = Font FT_Face (Float, Float) (Box V2 Float)

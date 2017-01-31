@@ -31,7 +31,6 @@ import Codec.Picture
 import Control.Concurrent.MVar
 import Control.Lens hiding (simple)
 import Data.Foldable
-import Data.Reflection (give)
 import Data.Tuple
 import Graphics.Holz
 import Linear
@@ -39,7 +38,6 @@ import Graphics.Holz.Vertex
 import Data.Map.Strict as Map
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 
 data WriterState = WriterState
@@ -121,8 +119,8 @@ getOffset = use offset
 -- | Create a renderer of the specified font.
 typewriter :: MonadIO m => FilePath -> m Renderer
 typewriter path = liftIO $ do
-  font <- readFont path
-  newMVar $ WriterState font [] zero Map.empty
+  f <- readFont path
+  newMVar $ WriterState f [] zero Map.empty
 
 runRenderer :: MonadIO m => Renderer -> Writing a -> ShaderT m a
 runRenderer v m = ShaderT ask >>= \w -> liftIO $ modifyMVar v

@@ -14,6 +14,7 @@ module Graphics.Holz.System (withHolz
   -- * Window operation
   , Window
   , openWindow
+  , closeWindow
   , WindowMode(..)
   , Box.Box(..)
   , windowShouldClose
@@ -69,27 +70,18 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Reader
-import Control.Monad.Trans
 import Control.Monad.Trans.Iter
 import Data.Bits
 import Data.BoundingBox as Box
 import Data.IORef
 import Foreign
-import Foreign.C (CFloat)
 import Foreign.C.String
 import Graphics.GL
 import Linear
-import qualified Data.ByteString as BS
-import qualified Data.Text.Encoding as Text
-import qualified Data.Text.IO as Text
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
-import qualified GHC.IO.Encoding as Encoding
 import qualified Graphics.UI.GLFW as GLFW
-import Graphics.GL
-import Graphics.GL.Ext.EXT.TextureFilterAnisotropic
 import Graphics.Holz.Input
-import Data.Reflection
 import System.Mem.Weak
 import System.IO.Unsafe
 import Control.Applicative
@@ -387,8 +379,8 @@ getBoundingBox = ask >>= \w -> liftIO $ readIORef (refRegion w)
 
 -- | Take a screenshot of the window.
 takeScreenshot :: MonadHolz m => m (Image PixelRGBA8)
-takeScreenshot = ask >>= \w -> liftIO $ do
-  V2 w h <- fmap floor <$> view (Box.size zero) <$> readIORef (refRegion w)
+takeScreenshot = ask >>= \win -> liftIO $ do
+  V2 w h <- fmap floor <$> view (Box.size zero) <$> readIORef (refRegion win)
   mv <- MV.unsafeNew $ w * h * 4 :: IO (MV.IOVector Word8)
   mv' <- MV.unsafeNew $ w * h * 4
   glReadBuffer GL_FRONT

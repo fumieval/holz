@@ -13,7 +13,6 @@
 module Graphics.Holz.Input where
 import Data.Typeable
 import Data.Char
-import Linear
 
 -- | Something being pressed, or released
 data Chatter a = Up a | Down a deriving (Show, Eq, Ord, Read, Typeable, Functor, Foldable, Traversable)
