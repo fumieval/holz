@@ -99,7 +99,7 @@ data Window = Window
 
 type MonadHolz m = (MonadIO m, MonadReader Window m)
 
-newtype HolzT m a = HolzT { unHolzT :: IterT (ReaderT Window m) a }
+newtype HolzT m a = HolzT { unHolzT :: ReaderT Window (IterT m) a }
   deriving (Functor, Applicative, Alternative
     , Monad, MonadPlus, MonadReader Window, MonadIO, MonadFree Identity)
 
@@ -133,8 +133,10 @@ windowShouldClose = ask >>= \s -> liftIO $ GLFW.windowShouldClose (theWindow s)
 
 -- | Run actions for a window.
 withFrame :: MonadHolz m => m a -> m a
-withFrame m = do
-  win <- ask
+withFrame m = ask >>= flip withFrameOn m
+
+withFrameOn :: MonadIO m => Window -> m a -> m a
+withFrameOn win m = do
   liftIO $ GLFW.makeContextCurrent $ Just $ theWindow win
   liftIO $ glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
@@ -148,12 +150,9 @@ withFrame m = do
 -- | Run an 'IterT' computation on a 'Window'. It returns 'Nothing' if the window is closed.
 -- The resulting 'IterT' can be composed with ('<|>') to update multiple windows in parallel.
 runHolzT :: MonadIO m => Window -> HolzT m a -> IterT m (Maybe a)
-runHolzT win = flip runReaderT win . go . unHolzT where
-  go m = join $ withFrame $ windowShouldClose >>= \case
-    False -> do
-      w <- ask
-      either (return . Just) (delay . go)
-        <$> lift (lift $ runIterT m `runReaderT` w)
+runHolzT win = go . flip runReaderT win . unHolzT where
+  go m = join $ withFrameOn win $ liftIO (GLFW.windowShouldClose (theWindow win)) >>= \case
+    False -> either (return . Just) (delay . go) <$> lift (runIterT m)
     True -> return (return Nothing)
 
 -- | Open a window.
