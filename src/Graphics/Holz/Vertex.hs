@@ -159,6 +159,11 @@ setOrthographic = do
     setViewport $ fmap round box
     setProjection $ ortho x0 x1 y1 y0 (-1) 1
 
+withDefaultShader :: MonadIO m => ShaderT m a -> m a
+withDefaultShader m = do
+  sh <- liftIO makeShader
+  runShaderT sh m
+
 runShaderT :: MonadIO m => Shader -> ShaderT m a -> m a
 runShaderT s (ShaderT m) = do
   glUseProgram $ shaderProg s
