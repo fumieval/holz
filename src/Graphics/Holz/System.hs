@@ -88,6 +88,7 @@ import Control.Applicative
 
 data Window = Window
   { refRegion :: {-# UNPACK #-} !(IORef (Box V2 Float))
+  , refWindowSize :: {-# UNPACK #-} !(IORef (V2 Int))
   , theWindow :: {-# UNPACK #-} !GLFW.Window
   , keyboardHandlers :: {-# UNPACK #-} !(IORef (Chatter Key -> IO ()))
   , mouseButtonHandlers :: {-# UNPACK #-} !(IORef (Chatter Int -> IO ()))
@@ -186,20 +187,23 @@ openWindow windowmode bbox@(Box (V2 x0 y0) (V2 x1 y1)) = do
   hs <- newIORef (const (return ()))
   refKeys <- newIORef ([], [])
   refChars <- newIORef ([], [])
+  rwin <- newIORef (V2 ww wh)
+
+  let win' = Window rbox rwin win hk hb hc hs refKeys refChars
 
   GLFW.setFramebufferSizeCallback win $ Just
     $ \_ w h -> do
       GLFW.makeContextCurrent $ Just win
       modifyIORef rbox $ Box.size zero .~ fmap fromIntegral (V2 w h)
       glViewport 0 0 (fromIntegral w) (fromIntegral h)
-
+  GLFW.setWindowSizeCallback win $ Just $ \_ w h -> writeIORef rwin $ V2 w h
   GLFW.setKeyCallback win $ Just $ keyCallback refKeys hk
   GLFW.setMouseButtonCallback win $ Just $ mouseButtonCallback hb
-  GLFW.setCursorPosCallback win $ Just $ cursorPosCallback hc
+  GLFW.setCursorPosCallback win $ Just $ cursorPosCallback win' hc
   GLFW.setScrollCallback win $ Just $ scrollCallback hs
   GLFW.setCharCallback win $ Just $ \_ ch -> modifyIORef' refChars $ \(str, buf) -> (str, ch : buf)
 
-  return $ Window rbox win hk hb hc hs refKeys refChars
+  return win'
 
 -- | Close a window.
 closeWindow :: Window -> IO ()
@@ -409,10 +413,11 @@ mouseButtonCallback h _ btn st _ = do
     GLFW.MouseButtonState'Released -> Up (fromEnum btn)
     _ -> Down (fromEnum btn)
 
-cursorPosCallback :: IORef (V2 Float -> IO ()) -> GLFW.CursorPosCallback
-cursorPosCallback h _ x y = do
+cursorPosCallback :: Window -> IORef (V2 Float -> IO ()) -> GLFW.CursorPosCallback
+cursorPosCallback w h _ x y = do
   m <- readIORef h
-  m $ fmap realToFrac $ V2 x y
+  p <- transformPos w (V2 x y)
+  m p
 
 scrollCallback :: IORef (V2 Float -> IO ()) -> GLFW.ScrollCallback
 scrollCallback h _ x y = do
@@ -433,8 +438,16 @@ typedString = ask >>= \w -> liftIO $ fst <$> readIORef (charactersTyped w)
 typedKeys :: MonadHolz m => m [Key]
 typedKeys = ask >>= \w -> liftIO $ fst <$> readIORef (keysTyped w)
 
+transformPos :: Window -> V2 Double -> IO (V2 Float)
+transformPos w v = do
+  siz <- readIORef (refWindowSize w)
+  siz' <- view (Box.size zero) <$> readIORef (refRegion w)
+  return $! (\p s t -> realToFrac p / fromIntegral s * t) <$> v <*> siz <*> siz'
+
 getCursorPos :: MonadHolz m => m (V2 Float)
-getCursorPos = ask >>= \w -> liftIO $ fmap realToFrac <$> uncurry V2 <$> GLFW.getCursorPos (theWindow w)
+getCursorPos = ask >>= \w -> liftIO $ do
+  pos <- uncurry V2 <$> GLFW.getCursorPos (theWindow w)
+  transformPos w $! pos
 
 overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
 overPtr f = alloca $ \p -> f p >> peek p

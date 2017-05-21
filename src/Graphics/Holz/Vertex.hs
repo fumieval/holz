@@ -28,8 +28,6 @@ import Graphics.GL
 import Graphics.Holz
 import Linear
 import Control.Monad.Free.Class
-import Control.Monad.IO.Class
-import Control.Monad.Reader.Class
 import qualified Data.Vector.Storable as V
 
 data Vertex = Vertex

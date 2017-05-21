@@ -1,4 +1,4 @@
-resolver: nightly-2016-09-04
+resolver: lts-7.22
 
 packages:
 - '.'
@@ -11,4 +11,3 @@ flags: {}
 
 # Extra package databases containing global packages
 extra-package-dbs: []
-
