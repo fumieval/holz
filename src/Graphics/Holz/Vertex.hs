@@ -25,7 +25,7 @@ import Foreign
 import Foreign.C.String
 import Foreign.C.Types
 import Graphics.GL
-import Graphics.Holz
+import Graphics.Holz.System
 import Linear
 import Control.Monad.Free.Class
 import qualified Data.Vector.Storable as V
