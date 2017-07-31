@@ -6,7 +6,7 @@ import Linear
 main = withHolz $ do
   win <- openWindow Windowed (Box (V2 0 0) (V2 640 480))
   sh <- makeShader
-  retract $ runHolzT win $ forever $ withFrame $ do
+  retract $ runHolzT win $ forever $ withFrame win $ do
     pos <- getCursorPos
     runShaderT sh $ do
       setOrthographic

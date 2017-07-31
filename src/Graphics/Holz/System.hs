@@ -133,11 +133,8 @@ windowShouldClose :: MonadHolz m => m Bool
 windowShouldClose = ask >>= \s -> liftIO $ GLFW.windowShouldClose (theWindow s)
 
 -- | Run actions for a window.
-withFrame :: MonadHolz m => m a -> m a
-withFrame m = ask >>= flip withFrameOn m
-
-withFrameOn :: MonadIO m => Window -> m a -> m a
-withFrameOn win m = do
+withFrame :: MonadIO m => Window -> m a -> m a
+withFrame win m = do
   liftIO $ GLFW.makeContextCurrent $ Just $ theWindow win
   liftIO $ glClear $ GL_COLOR_BUFFER_BIT .|. GL_DEPTH_BUFFER_BIT
 
@@ -152,7 +149,7 @@ withFrameOn win m = do
 -- The resulting 'IterT' can be composed with ('<|>') to update multiple windows in parallel.
 runHolzT :: MonadIO m => Window -> HolzT m a -> IterT m (Maybe a)
 runHolzT win = go . flip runReaderT win . unHolzT where
-  go m = join $ withFrameOn win $ liftIO (GLFW.windowShouldClose (theWindow win)) >>= \case
+  go m = join $ withFrame win $ liftIO (GLFW.windowShouldClose (theWindow win)) >>= \case
     False -> either (return . Just) (delay . go) <$> lift (runIterT m)
     True -> return (return Nothing)
 
