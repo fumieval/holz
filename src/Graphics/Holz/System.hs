@@ -336,12 +336,14 @@ releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
   with vbo $ glDeleteBuffers 1
 
 -- | Set a viewport.
-setViewport :: MonadIO m => Box V2 Int -> m ()
-setViewport (Box (V2 x0 y0) (V2 x1 y1)) = liftIO $ glViewport
-  (fromIntegral x0)
-  (fromIntegral y0)
-  (fromIntegral $ x1 - x0)
-  (fromIntegral $ y1 - y0)
+setViewport :: MonadHolz m => Box V2 Float -> m ()
+setViewport (Box (V2 x0 y0) (V2 x1 y1)) = ask >>= \w -> liftIO $ do
+  V2 w h <- view (Box.size zero) <$> readIORef (refRegion w)
+  glViewport
+    (floor x0)
+    (floor $ h - y1)
+    (floor $ x1 - x0)
+    (floor $ y1 - y0)
 
 -- | Draw 'VertexBuffer' using the w 'Texture' and a model matrix.
 drawVertexBuffer :: MonadIO m => Texture -> VertexBuffer -> m ()

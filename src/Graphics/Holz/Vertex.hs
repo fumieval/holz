@@ -156,7 +156,7 @@ drawVertexPlain m = drawVertex m blankTexture
 setOrthographic :: MonadHolz m => ShaderT m ()
 setOrthographic = do
     box@(Box (V2 x0 y0) (V2 x1 y1)) <- lift getBoundingBox
-    setViewport $ fmap round box
+    setViewport box
     setProjection $ ortho x0 x1 y1 y0 (-1) 1
 
 withDefaultShader :: MonadIO m => ShaderT m a -> m a
