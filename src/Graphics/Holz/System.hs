@@ -340,7 +340,7 @@ releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
 -- | Set a viewport.
 setViewport :: MonadHolz m => Box V2 Float -> m ()
 setViewport (Box (V2 x0 y0) (V2 x1 y1)) = ask >>= \w -> liftIO $ do
-  V2 w h <- view (Box.size zero) <$> readIORef (refRegion w)
+  V2 _ h <- view (Box.size zero) <$> readIORef (refRegion w)
   glViewport
     (floor x0)
     (floor $ h - y1)

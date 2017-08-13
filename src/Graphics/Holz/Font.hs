@@ -82,7 +82,7 @@ freeType = unsafePerformIO $ alloca $ \p -> do
 -- | Render a character. It also returns the offset and advance.
 renderChar :: MonadIO m => Font -> Float -> Char -> m (Image PixelRGBA8, V2 Float, V2 Float)
 renderChar (Font face _ _) pixel ch = liftIO $ do
-  ft_Set_Pixel_Sizes face 0 (floor pixel)
+  runFreeType $ ft_Set_Pixel_Sizes face 0 (floor pixel)
 
   runFreeType $ ft_Load_Char face (fromIntegral $ fromEnum ch) ft_LOAD_RENDER
 
