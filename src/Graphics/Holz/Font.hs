@@ -82,15 +82,11 @@ freeType = unsafePerformIO $ alloca $ \p -> do
 -- | Render a character. It also returns the offset and advance.
 renderChar :: MonadIO m => Font -> Float -> Char -> m (Image PixelRGBA8, V2 Float, V2 Float)
 renderChar (Font face _ _) pixel ch = liftIO $ do
-  let dpi = 300
+  ft_Set_Pixel_Sizes face 0 (floor pixel)
 
-  runFreeType $ ft_Set_Char_Size face 0 (floor $ pixel * 72 / fromIntegral dpi * 64) dpi dpi
-
-  ix <- ft_Get_Char_Index face (fromIntegral $ fromEnum ch)
-  runFreeType $ ft_Load_Glyph face ix ft_LOAD_DEFAULT
+  runFreeType $ ft_Load_Char face (fromIntegral $ fromEnum ch) ft_LOAD_RENDER
 
   slot <- peek $ glyph face
-  runFreeType $ ft_Render_Glyph slot ft_RENDER_MODE_NORMAL
 
   bmp <- peek $ GS.bitmap slot
   left <- fmap fromIntegral $ peek $ GS.bitmap_left slot
