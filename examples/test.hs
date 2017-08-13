@@ -1,5 +1,4 @@
 import Graphics.Holz
-import Graphics.Holz.Vertex
 import Control.Monad
 import Linear
 
