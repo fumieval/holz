@@ -115,7 +115,6 @@ data Shader = Shader
   , locationModel :: {-# UNPACK #-} !GLint
   , locationProjection :: {-# UNPACK #-} !GLint
   , locationDiffuse :: {-# UNPACK #-} !GLint
-  , locationSpecular :: {-# UNPACK #-} !GLint
   }
 
 newtype ShaderT m a = ShaderT { unShaderT :: ReaderT Shader m a }
@@ -153,7 +152,7 @@ drawVertexPlain m = drawVertex m blankTexture
 {-# INLINE drawVertexPlain #-}
 
 -- | Set orthographic projection
-setOrthographic :: MonadHolz m => ShaderT m ()
+setOrthographic :: (MonadHolz r m, HasWindow r) => ShaderT m ()
 setOrthographic = do
     box@(Box (V2 x0 y0) (V2 x1 y1)) <- lift getBoundingBox
     setViewport box
@@ -198,11 +197,9 @@ makeShader = do
   locationModel <- getUniform shaderProg "model"
   locationProjection <- getUniform shaderProg "projection"
   locationDiffuse <- getUniform shaderProg "diffuse"
-  locationSpecular <- getUniform shaderProg "specular"
 
   with (V4 1 1 1 1 :: V4 Float) $ \ptr -> do
-      glUniform4fv locationDiffuse 1 (castPtr ptr)
-      glUniform4fv locationSpecular 1 (castPtr ptr)
+    glUniform4fv locationDiffuse 1 (castPtr ptr)
 
   return Shader{..}
 
@@ -235,7 +232,6 @@ fragmentShaderSource = "#version 330\n\
   \in vec4 color; \
   \uniform sampler2D tex; \
   \uniform vec4 diffuse; \
-  \uniform vec3 specular; \
   \void main(void){ \
   \  fragColor = texture(tex, texUV) * color * diffuse; \
   \}"
