@@ -56,7 +56,7 @@ vertexAttributes = do
     pos''' = pos'' `plusPtr` sizeOf (0 :: V3 CFloat)
 {-# INLINE vertexAttributes #-}
 
-registerVertex :: MonadIO m => PrimitiveMode -> [Vertex] -> m VertexBuffer
+registerVertex :: (MonadHolz r m, HasShader r) => PrimitiveMode -> [Vertex] -> m VertexBuffer
 registerVertex mode = makeVertexBuffer vertexAttributes mode . V.fromList
 
 align1 :: Int
@@ -104,7 +104,7 @@ translate :: V3 Float -> M44 Float
 translate v = identity & translation .~ v
 
 -- | Draw vertices through the given model matrix.
-draw :: MonadIO m => M44 Float -> (PrimitiveMode, [Vertex]) -> ShaderT m ()
+draw :: (MonadHolz r m, HasShader r) => M44 Float -> (PrimitiveMode, [Vertex]) -> m ()
 draw m (prim, vs) = do
   buf <- registerVertex prim vs
   drawVertexPlain m buf
@@ -117,56 +117,54 @@ data Shader = Shader
   , locationDiffuse :: {-# UNPACK #-} !GLint
   }
 
-newtype ShaderT m a = ShaderT { unShaderT :: ReaderT Shader m a }
-  deriving (Functor, Applicative, Monad, Alternative, MonadPlus)
+class HasShader r where
+  getShader :: r -> Shader
 
-instance MonadIO m => MonadIO (ShaderT m) where
-  liftIO = ShaderT . liftIO
-
-instance MonadTrans ShaderT where
-  lift = ShaderT . lift
-
-instance MonadReader r m => MonadReader r (ShaderT m) where
-  ask = ShaderT $ lift ask
-  local f = ShaderT . mapReaderT (local f) . unShaderT
-
-instance (Functor f, MonadFree f m) => MonadFree f (ShaderT m) where
-  wrap = ShaderT . wrap . fmap unShaderT
+instance HasShader Shader where
+  getShader = id
 
 -- | Set the projection matrix.
-setProjection :: MonadIO m => M44 Float -> ShaderT m ()
-setProjection proj = ShaderT ask >>= \w -> liftIO $ with proj
+setProjection :: (MonadHolz r m, HasShader r) => M44 Float -> m ()
+setProjection proj = asks getShader >>= \w -> liftIO $ with proj
   $ \ptr -> glUniformMatrix4fv (locationProjection w) 1 1 $ castPtr ptr
 
 -- | Set a diffuse color.
-setDiffuse :: MonadIO m => V4 Float -> ShaderT m ()
-setDiffuse col = ShaderT ask >>= \w -> liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse w) 1 (castPtr ptr)
+setDiffuse :: (MonadHolz r m, HasShader r) => V4 Float -> m ()
+setDiffuse col = asks getShader >>= \w -> liftIO $ with col $ \ptr -> glUniform4fv (locationDiffuse w) 1 (castPtr ptr)
 
-drawVertex :: MonadIO m => M44 Float -> Texture -> VertexBuffer -> ShaderT m ()
-drawVertex mat tex vb = ShaderT ask >>= \w -> liftIO $ do
+drawVertex :: (MonadHolz r m, HasShader r) => M44 Float -> Texture -> VertexBuffer -> m ()
+drawVertex mat tex vb = asks getShader >>= \w -> liftIO $ do
   with mat $ \p -> glUniformMatrix4fv (locationModel w) 1 1 (castPtr p)
   drawVertexBuffer tex vb
 
-drawVertexPlain :: MonadIO m => M44 Float -> VertexBuffer -> ShaderT m ()
+drawVertexPlain :: (MonadHolz r m, HasShader r) => M44 Float -> VertexBuffer -> m ()
 drawVertexPlain m = drawVertex m blankTexture
 {-# INLINE drawVertexPlain #-}
 
--- | Set orthographic projection
-setOrthographic :: (MonadHolz r m, HasWindow r) => ShaderT m ()
-setOrthographic = do
-    box@(Box (V2 x0 y0) (V2 x1 y1)) <- lift getBoundingBox
-    setViewport box
-    setProjection $ ortho x0 x1 y1 y0 (-1) 1
+data WithShader r = WithShader !Shader !r
 
-withDefaultShader :: MonadIO m => ShaderT m a -> m a
+instance HasWindow r => HasWindow (WithShader r) where
+  getWindow (WithShader _ w) = getWindow w
+
+instance HasShader (WithShader r) where
+  getShader (WithShader s _) = s
+
+type ShaderT r = ReaderT (WithShader r)
+
+withDefaultShader :: (MonadHolz r m) => ShaderT r m a -> m a
 withDefaultShader m = do
   sh <- liftIO makeShader
   runShaderT sh m
 
-runShaderT :: MonadIO m => Shader -> ShaderT m a -> m a
-runShaderT s (ShaderT m) = do
-  glUseProgram $ shaderProg s
-  runReaderT m s
+runShaderT :: (MonadHolz r m) => Shader -> ShaderT r m a -> m a
+runShaderT sh m = ask >>= runReaderT m . WithShader sh
+
+-- | Set orthographic projection
+setOrthographic :: (MonadHolz r m, HasWindow r, HasShader r) => m ()
+setOrthographic = do
+  box@(Box (V2 x0 y0) (V2 x1 y1)) <- getBoundingBox
+  setViewport box
+  setProjection $ ortho x0 x1 y1 y0 (-1) 1
 
 makeShader :: IO Shader
 makeShader = do
