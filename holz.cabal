@@ -17,7 +17,13 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Graphics.Holz.Text, Graphics.Holz.Vertex, Graphics.Holz.System, Graphics.Holz.Input, Graphics.Holz.Font, Graphics.Holz
+  exposed-modules:     Graphics.Holz.Text
+    , Graphics.Holz.Shader.Simple
+    , Graphics.Holz.Shader
+    , Graphics.Holz.System
+    , Graphics.Holz.Input
+    , Graphics.Holz.Font
+    , Graphics.Holz
   other-extensions:    DeriveDataTypeable, DeriveFunctor, DeriveFoldable, DeriveTraversable
   ghc-options: -Wall
   build-depends:       base
@@ -36,6 +42,7 @@ library
       , linear
       , mtl
       , random
+      , raw-strings-qq
       , reflection
       , template-haskell
       , text
@@ -48,5 +55,5 @@ executable holz-test
   main-is: test.hs
   hs-source-dirs: examples
   ghc-options: -O2 -threaded -Wall
-  build-depends: base, linear, holz
+  build-depends: base, linear, holz, raw-strings-qq
   default-language:    Haskell2010
