@@ -29,7 +29,7 @@ data Info h = Info
 
 main :: IO ()
 main = withHolz $ do
-  win <- openWindow Windowed (Box (V2 0 0) (V2 640 480))
+  win <- openWindow Resizable (Box (V2 0 0) (V2 640 480))
   sh <- makeShader vertexShaderSource fragmentShaderSource
   void $ flip runReaderT (WindowAndShader win sh) $ do
     vb <- uncurry registerVertex $ S.rectangle (pure 1) (V2 (-1) (-1)) (V2 1 1)
@@ -56,11 +56,9 @@ void main(void)
 fragmentShaderSource :: FragmentShaderSource Info S.Fragment
 fragmentShaderSource = [QQ.r|
 //https://www.shadertoy.com/view/XsVSzW
-
 out vec4 fragColor;
 void main( void )
 {
-
 	vec2 uv = ( fPos.xy / resolution.xy )*4.0;
 
 	vec2 uv0=uv;
