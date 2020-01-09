@@ -1,6 +1,7 @@
 module Graphics.Holz (
     module Graphics.Holz.Font,
     module Graphics.Holz.Input,
+    module Graphics.Holz.Shader,
     module Graphics.Holz.System
     , ReaderT(..)
     , IterT(..)
@@ -9,6 +10,7 @@ module Graphics.Holz (
 
 import Graphics.Holz.Font
 import Graphics.Holz.Input
+import Graphics.Holz.Shader
 import Graphics.Holz.System
 import Control.Monad.Trans.Reader
 import Control.Monad.Trans.Iter

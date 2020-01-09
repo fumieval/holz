@@ -33,7 +33,6 @@ import Control.Lens hiding (simple)
 import Data.Foldable
 import Data.Tuple
 import Graphics.Holz
-import Graphics.Holz.Shader
 import Graphics.Holz.Shader.Simple
 import Linear
 import Data.Map.Strict as Map

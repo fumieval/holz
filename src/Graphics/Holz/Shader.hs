@@ -19,6 +19,7 @@ module Graphics.Holz.Shader
   , PrimitiveMode(..)
   , registerVertex
   , releaseVertex
+  , withVertex
   , drawVertexBuffer
   -- * Texture
   , Texture
@@ -26,6 +27,7 @@ module Graphics.Holz.Shader
   , registerTextures
   , registerTexture
   , releaseTexture
+  , withTexture
   , Shader(..)
   , HasShader(..)
   , ShaderProg
@@ -66,6 +68,7 @@ import Data.Word (Word8)
 import Foreign.Marshal.Array
 import Foreign.Marshal.Alloc (alloca)
 import System.IO.Unsafe
+import UnliftIO (MonadUnliftIO, bracket)
 
 newtype UniformVar a = UniformVar GLint
 
@@ -214,6 +217,9 @@ releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
   with vao $ glDeleteVertexArrays 1
   with vbo $ glDeleteBuffers 1
 
+withVertex :: (Generic v, GVertex (Rep v), Storable v, MonadUnliftIO m) => PrimitiveMode -> V.Vector v -> (VertexBuffer v -> m r) -> m r
+withVertex m v = bracket (registerVertex m v) releaseVertex
+
 -- | Draw 'VertexBuffer' using the w 'Texture' and a model matrix.
 drawVertexBuffer :: MonadIO m => Texture -> VertexBuffer v -> m ()
 drawVertexBuffer (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
@@ -275,7 +281,7 @@ registerTextures (V2 sw sh) imgs = liftIO $ do
   glPixelStorei GL_UNPACK_SWAP_BYTES 0
   let level = floor $ logBase (2 :: Float) $ fromIntegral (max sw sh)
 
-  glTexStorage2D GL_TEXTURE_2D level GL_SRGB8_ALPHA8 (fromIntegral sw) (fromIntegral sh)
+  glTexStorage2D GL_TEXTURE_2D level GL_RGBA8 (fromIntegral sw) (fromIntegral sh)
 
   -- when gl_EXT_texture_filter_anisotropic
   --  $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 8
@@ -288,8 +294,11 @@ registerTextures (V2 sw sh) imgs = liftIO $ do
 
   return $ Texture tex
 
-releaseTexture :: Texture -> IO ()
-releaseTexture (Texture i) = with i $ glDeleteTextures 1
+releaseTexture :: MonadIO m => Texture -> m ()
+releaseTexture (Texture i) = liftIO $ with i $ glDeleteTextures 1
+
+withTexture :: MonadUnliftIO m => Image PixelRGBA8 -> (Texture -> m a) -> m a
+withTexture img = bracket (registerTexture img) releaseTexture
 
 compileShader :: BB.Builder -> GLuint -> IO ()
 compileShader src shader = do

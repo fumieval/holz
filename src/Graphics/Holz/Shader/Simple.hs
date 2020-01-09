@@ -33,6 +33,7 @@ module Graphics.Holz.Shader.Simple
   , drawVertexPlain
   , makeDefaultShader
   , setOrthographic
+  , setProjection
   , ModelProj(..)
   , Fragment(..)
   , HasSimpleShader
