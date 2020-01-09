@@ -33,6 +33,7 @@ import Control.Lens hiding (simple)
 import Data.Foldable
 import Data.Tuple
 import Graphics.Holz
+import Graphics.Holz.Shader.Simple
 import Linear
 import Data.Map.Strict as Map
 import Control.Monad.IO.Class
@@ -41,9 +42,9 @@ import Control.Monad.Trans.State.Strict
 
 data WriterState = WriterState
   { font :: Font
-  , _toDraw :: [(V2 Float, Texture, VertexBuffer)]
+  , _toDraw :: [(V2 Float, Texture, VertexBuffer Vertex)]
   , _offset :: !(V2 Float)
-  , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer, V2 Float)) }
+  , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer Vertex, V2 Float)) }
 makeLenses ''WriterState
 
 -- | A 'Renderer' handles 'Writing' operations.
@@ -54,15 +55,15 @@ type Renderer = MVar WriterState
 --
 -- @renderer ..- 'simpleL' 12 (V4 1 1 1 1) "Hello, world" 'identity'@
 --
-type Writing = StateT WriterState (ShaderT IO)
+type Writing r = StateT WriterState (ReaderT r IO)
 
 -- | Render a 'String'.
 -- The left edge of the baseline will be at @mat !* V4 0 0 0 1@.
-simpleL :: Float -- Size
+simpleL :: HasSimpleShader r => Float -- Size
   -> V4 Float -- ^ Color (RGBA)
   -> String -- String
   -> M44 Float -- Matrix
-  -> Writing ()
+  -> Writing r ()
 simpleL s col str m = do
   string s col str
   render m
@@ -70,7 +71,7 @@ simpleL s col str m = do
 
 -- | Draw a 'String', right-aligned.
 -- The right edge of the baseline will be at @mat !* V4 0 0 0 1@.
-simpleR :: Float -> V4 Float -> String -> M44 Float -> Writing ()
+simpleR :: HasSimpleShader r => Float -> V4 Float -> String -> M44 Float -> Writing r ()
 simpleR s col str m = do
   string s col str
   V2 x y <- getOffset
@@ -78,20 +79,20 @@ simpleR s col str m = do
   clear
 
 -- | Render the text to the window, applying a model matrix.
-render :: M44 Float -> Writing ()
+render :: HasSimpleShader r => M44 Float -> Writing r ()
 render m = do
   xs <- use toDraw
   for_ xs $ \(v, tex, buf) -> lift $ drawVertex
     (m !*! (identity & translation . _xy .~ v)) tex buf
 
 -- | Clear the text.
-clear :: Writing ()
+clear :: Writing r ()
 clear = do
   toDraw .= []
   offset .= V2 0 0
 
 -- | Type one character.
-char :: Float -> V4 Float -> Char -> Writing ()
+char :: HasSimpleShader r => Float -> V4 Float -> Char -> Writing r ()
 char s col ch = do
   ws <- get
   (tex, buf, adv) <- preuse (cache . ix (s, ch, col)) >>= \case
@@ -108,11 +109,11 @@ char s col ch = do
   offset .= pos + adv
 
 -- | Write a string.
-string :: Float -> V4 Float -> String -> Writing ()
+string :: HasSimpleShader r => Float -> V4 Float -> String -> Writing r ()
 string s col = mapM_ (char s col)
 
 -- | Get the current position of writing.
-getOffset :: Writing (V2 Float)
+getOffset :: Writing r (V2 Float)
 getOffset = use offset
 
 -- | Create a renderer of the specified font.
@@ -121,6 +122,6 @@ typewriter path = liftIO $ do
   f <- readFont path
   newMVar $ WriterState f [] zero Map.empty
 
-runRenderer :: MonadIO m => Renderer -> Writing a -> ShaderT m a
-runRenderer v m = ShaderT ask >>= \w -> liftIO $ modifyMVar v
-  $ \s -> fmap swap $ runShaderT w $ runStateT m s
+runRenderer :: (MonadHolz r m, HasSimpleShader r) => Renderer -> Writing r a -> m a
+runRenderer v m = ask >>= \w -> liftIO $ modifyMVar v
+  $ \s -> fmap swap $ runReaderT (runStateT m s) w

@@ -22,27 +22,14 @@ module Graphics.Holz.System (withHolz
   , setTitle
   , clearColor
   -- * Monad
+  , HasWindow(..)
   , MonadHolz
-  , HolzT(..)
-  , runHolzT
+  , runHolz
   , retract
-  -- * Textures
-  , Texture
-  , registerTexture
-  , registerTextures
-  , releaseTexture
-  , blankTexture
-  -- * Vertices
-  , PrimitiveMode(..)
-  , VertexBuffer
-  , makeVertexBuffer
-  , releaseVertex
   -- * Drawing region
   , setViewport
   , getBoundingBox
   , setBoundingBox
-  -- * Rendering
-  , drawVertexBuffer
   -- * Input (callback)
   , linkKeyboard
   , linkMouseButton
@@ -59,10 +46,6 @@ module Graphics.Holz.System (withHolz
   , enableCursor
   , disableCursor
   , hideCursor
-  -- * Internal
-  , overPtr
-  , getUniform
-  , compileShader
   ) where
 
 import Codec.Picture
@@ -75,15 +58,12 @@ import Data.Bits
 import Data.BoundingBox as Box
 import Data.IORef
 import Foreign
-import Foreign.C.String
 import Graphics.GL
 import Linear
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as MV
 import qualified Graphics.UI.GLFW as GLFW
 import Graphics.Holz.Input
-import System.Mem.Weak
-import System.IO.Unsafe
 import Control.Applicative
 
 data Window = Window
@@ -98,39 +78,38 @@ data Window = Window
   , charactersTyped :: !(IORef ([Char], [Char]))
   }
 
-type MonadHolz m = (MonadIO m, MonadReader Window m)
+type MonadHolz r m = (MonadIO m, MonadReader r m)
 
-newtype HolzT m a = HolzT { unHolzT :: ReaderT Window (IterT m) a }
-  deriving (Functor, Applicative, Alternative
-    , Monad, MonadPlus, MonadReader Window, MonadIO, MonadFree Identity)
+class HasWindow r where
+  getWindow :: r -> Window
 
-instance MonadTrans HolzT where
-  lift m = HolzT $ lift $ lift m
+instance HasWindow Window where
+  getWindow = id
+
+askWindow :: (MonadHolz r m, HasWindow r) => m Window
+askWindow = asks getWindow
 
 -- | Set a handler for key events.
-linkKeyboard :: MonadHolz m => (Chatter Key -> IO ()) -> m ()
-linkKeyboard f = ask >>= \s -> liftIO $ modifyIORef (keyboardHandlers s) (liftA2 (>>) f)
+linkKeyboard :: (MonadHolz r m, HasWindow r) => (Chatter Key -> IO ()) -> m ()
+linkKeyboard f = askWindow >>= \s -> liftIO $ modifyIORef (keyboardHandlers s) (liftA2 (>>) f)
 
 -- | Set a handler for mouse button events.
-linkMouseButton :: MonadHolz m => (Chatter Int -> IO ()) -> m ()
-linkMouseButton f = ask >>= \s -> liftIO $ modifyIORef (mouseButtonHandlers s) (liftA2 (>>) f)
+linkMouseButton :: (MonadHolz r m, HasWindow r) => (Chatter Int -> IO ()) -> m ()
+linkMouseButton f = askWindow >>= \s -> liftIO $ modifyIORef (mouseButtonHandlers s) (liftA2 (>>) f)
 
 -- | Set a handler for cursor movement.
-linkMouseCursor :: MonadHolz m => (V2 Float -> IO ()) -> m ()
-linkMouseCursor f = ask >>= \s -> liftIO $ modifyIORef (mouseCursorHandlers s) (liftA2 (>>) f)
+linkMouseCursor :: (MonadHolz r m, HasWindow r) => (V2 Float -> IO ()) -> m ()
+linkMouseCursor f = askWindow >>= \s -> liftIO $ modifyIORef (mouseCursorHandlers s) (liftA2 (>>) f)
 
 -- | Set a handler for scroll events.
-linkMouseScroll :: MonadHolz m => (V2 Float -> IO ()) -> m ()
-linkMouseScroll f = ask >>= \s -> liftIO $ modifyIORef (mouseScrollHandlers s) (liftA2 (>>) f)
-
--- | 'PrimitiveMode' describes how vertices will be drawn.
-data PrimitiveMode = Triangles | TriangleFan | TriangleStrip | LineStrip | LineLoop
+linkMouseScroll :: (MonadHolz r m, HasWindow r) => (V2 Float -> IO ()) -> m ()
+linkMouseScroll f = askWindow >>= \s -> liftIO $ modifyIORef (mouseScrollHandlers s) (liftA2 (>>) f)
 
 data WindowMode = FullScreen | Resizable | Windowed deriving (Show, Eq, Ord)
 
 -- | Returns 'True' when the window should be closed.
-windowShouldClose :: MonadHolz m => m Bool
-windowShouldClose = ask >>= \s -> liftIO $ GLFW.windowShouldClose (theWindow s)
+windowShouldClose :: (MonadHolz r m, HasWindow r) => m Bool
+windowShouldClose = askWindow >>= \s -> liftIO $ GLFW.windowShouldClose (theWindow s)
 
 -- | Run actions for a window.
 withFrame :: MonadIO m => Window -> m a -> m a
@@ -147,10 +126,10 @@ withFrame win m = do
 
 -- | Run an 'IterT' computation on a 'Window'. It returns 'Nothing' if the window is closed.
 -- The resulting 'IterT' can be composed with ('<|>') to update multiple windows in parallel.
-runHolzT :: MonadIO m => Window -> HolzT m a -> IterT m (Maybe a)
-runHolzT win = go . flip runReaderT win . unHolzT where
-  go m = join $ withFrame win $ liftIO (GLFW.windowShouldClose (theWindow win)) >>= \case
-    False -> either (return . Just) (delay . go) <$> lift (runIterT m)
+runHolz :: (MonadHolz r m, HasWindow r) => IterT m a -> IterT m (Maybe a)
+runHolz m0 = asks getWindow >>= go m0 where
+  go m win = join $ withFrame win $ liftIO (GLFW.windowShouldClose (theWindow win)) >>= \case
+    False -> either (return . Just) (delay . flip go win) <$> lift (runIterT m)
     True -> return (return Nothing)
 
 -- | Open a window.
@@ -221,16 +200,6 @@ withHolz m = do
 
   return a
 
-compileShader :: String -> GLuint -> IO ()
-compileShader src shader = do
-  withCString src $ \ptr -> withArray [ptr]
-    $ \srcs -> glShaderSource shader 1 srcs nullPtr
-  glCompileShader shader
-  l <- overPtr $ glGetShaderiv shader GL_INFO_LOG_LENGTH
-  allocaArray (fromIntegral l) $ \ptr -> do
-    glGetShaderInfoLog shader l nullPtr ptr
-    peekCString ptr >>= putStrLn
-
 initializeGL :: IO ()
 initializeGL = do
   glEnable GL_BLEND
@@ -243,103 +212,9 @@ initializeGL = do
   glEnable GL_DEPTH_TEST
   glEnable GL_LINE_SMOOTH
 
-getUniform :: GLuint -> String -> IO GLint
-getUniform prog str = withCString str $ glGetUniformLocation prog
-
-convPrimitiveMode :: PrimitiveMode -> GLenum
-convPrimitiveMode Triangles = GL_TRIANGLES
-convPrimitiveMode LineStrip = GL_LINE_STRIP
-convPrimitiveMode TriangleFan = GL_TRIANGLE_FAN
-convPrimitiveMode TriangleStrip = GL_TRIANGLE_STRIP
-convPrimitiveMode LineLoop = GL_LINE_LOOP
-{-# INLINE convPrimitiveMode #-}
-
-data VertexBuffer = VertexBuffer !GLuint !GLuint !GLenum !GLsizei
-
-instance Eq VertexBuffer where
-  VertexBuffer i _ _ _ == VertexBuffer j _ _ _ = i == j
-
-instance Ord VertexBuffer where
-  VertexBuffer i _ _ _ `compare` VertexBuffer j _ _ _ = compare i j
-
-newtype Texture = Texture GLuint deriving (Eq, Ord)
-
--- | Send an image into the graphics driver.
-registerTexture :: MonadIO m => Image PixelRGBA8 -> m Texture
-registerTexture img@(Image w h _) = registerTextures (V2 w h) [(V2 0 0, img)]
-
--- | A blank texture.
-blankTexture :: Texture
-blankTexture = unsafePerformIO $ do
-  tex <- overPtr (glGenTextures 1)
-  glBindTexture GL_TEXTURE_2D tex
-  with (pure 255 :: V3 Word8) $ glTexImage2D GL_TEXTURE_2D 0 GL_SRGB8 1 1 0 GL_RGBA GL_UNSIGNED_BYTE . castPtr
-  return $ Texture tex
-{-# NOINLINE blankTexture #-}
-
--- | Send a set of images into the graphics driver.
-registerTextures :: MonadIO m => V2 Int -> [(V2 Int, Image PixelRGBA8)] -> m Texture
-registerTextures (V2 sw sh) imgs = liftIO $ do
-  tex <- overPtr (glGenTextures 1)
-  glBindTexture GL_TEXTURE_2D tex
-  glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
-  glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_LINEAR
-  glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_S GL_CLAMP_TO_EDGE
-  glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_T GL_CLAMP_TO_EDGE
-  glPixelStorei GL_UNPACK_ALIGNMENT 4
-  glPixelStorei GL_UNPACK_IMAGE_HEIGHT 0
-  glPixelStorei GL_UNPACK_LSB_FIRST 0
-  glPixelStorei GL_UNPACK_ROW_LENGTH 0
-  glPixelStorei GL_UNPACK_SKIP_IMAGES 0
-  glPixelStorei GL_UNPACK_SKIP_PIXELS 0
-  glPixelStorei GL_UNPACK_SKIP_ROWS 0
-  glPixelStorei GL_UNPACK_SWAP_BYTES 0
-  let level = floor $ logBase (2 :: Float) $ fromIntegral (max sw sh)
-
-  glTexStorage2D GL_TEXTURE_2D level GL_SRGB8_ALPHA8 (fromIntegral sw) (fromIntegral sh)
-
-  -- when gl_EXT_texture_filter_anisotropic
-  --  $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 8
-
-  forM_ imgs $ \(V2 x y, Image w h vec) -> V.unsafeWith vec
-    $ glTexSubImage2D GL_TEXTURE_2D 0 (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE
-    . castPtr
-
-  glGenerateMipmap GL_TEXTURE_2D
-
-  let t = Texture tex
-  addFinalizer t $ with tex $ glDeleteTextures 1
-  return t
-
-releaseTexture :: Texture -> IO ()
-releaseTexture (Texture i) = with i $ glDeleteTextures 1
-
--- | Send vertices to the graphics driver.
-makeVertexBuffer :: forall m v. (Storable v, MonadIO m)
-  => IO () -> PrimitiveMode -> V.Vector v -> m VertexBuffer
-makeVertexBuffer conf mode va = liftIO $ do
-  vao <- overPtr $ glGenVertexArrays 1
-  glBindVertexArray vao
-  vbo <- overPtr $ glGenBuffers 1
-  glBindBuffer GL_ARRAY_BUFFER vbo
-  conf
-  let siz = fromIntegral $ V.length va * sizeOf (undefined :: v)
-  V.unsafeWith va $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
-  let vb = VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length va)
-  -- addFinalizer vb $ do
-  --  with vao $ glDeleteVertexArrays 1
-  --  with vbo $ glDeleteBuffers 1
-  return vb
-
--- | Release a 'VertexBuffer'. The 'VertexBuffer' can't be used after this.
-releaseVertex :: MonadIO m => VertexBuffer -> m ()
-releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
-  with vao $ glDeleteVertexArrays 1
-  with vbo $ glDeleteBuffers 1
-
 -- | Set a viewport.
-setViewport :: MonadHolz m => Box V2 Float -> m ()
-setViewport (Box (V2 x0 y0) (V2 x1 y1)) = ask >>= \w -> liftIO $ do
+setViewport :: (MonadHolz r m, HasWindow r) => Box V2 Float -> m ()
+setViewport (Box (V2 x0 y0) (V2 x1 y1)) = askWindow >>= \w -> liftIO $ do
   V2 _ h <- view (Box.size zero) <$> readIORef (refRegion w)
   glViewport
     (floor x0)
@@ -347,43 +222,35 @@ setViewport (Box (V2 x0 y0) (V2 x1 y1)) = ask >>= \w -> liftIO $ do
     (floor $ x1 - x0)
     (floor $ y1 - y0)
 
--- | Draw 'VertexBuffer' using the w 'Texture' and a model matrix.
-drawVertexBuffer :: MonadIO m => Texture -> VertexBuffer -> m ()
-drawVertexBuffer (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
-  glBindTexture GL_TEXTURE_2D tex
-  glBindVertexArray vao
-  glBindBuffer GL_ARRAY_BUFFER vbo
-  glDrawArrays m 0 n
-
 -- | Hide the system cursor.
-hideCursor :: MonadHolz m => m ()
-hideCursor = ask >>= \w -> liftIO $ GLFW.setCursorInputMode (theWindow w) GLFW.CursorInputMode'Hidden
+hideCursor :: (MonadHolz r m, HasWindow r) => m ()
+hideCursor = askWindow >>= \w -> liftIO $ GLFW.setCursorInputMode (theWindow w) GLFW.CursorInputMode'Hidden
 
 -- | Hide and pin the cursor against the program.
-disableCursor :: MonadHolz m => m ()
-disableCursor = ask >>= \w -> liftIO $ GLFW.setCursorInputMode (theWindow w) GLFW.CursorInputMode'Disabled
+disableCursor :: (MonadHolz r m, HasWindow r) => m ()
+disableCursor = askWindow >>= \w -> liftIO $ GLFW.setCursorInputMode (theWindow w) GLFW.CursorInputMode'Disabled
 
 -- | Re-enable the cursor.
-enableCursor :: MonadHolz m => m ()
-enableCursor = ask >>= \w -> liftIO $ GLFW.setCursorInputMode (theWindow w) GLFW.CursorInputMode'Normal
+enableCursor :: (MonadHolz r m, HasWindow r) => m ()
+enableCursor = askWindow >>= \w -> liftIO $ GLFW.setCursorInputMode (theWindow w) GLFW.CursorInputMode'Normal
 
 -- | Set the background color.
 clearColor :: MonadIO m => V4 Float -> m ()
 clearColor (V4 r g b a) = liftIO $ glClearColor (realToFrac r) (realToFrac g) (realToFrac b) (realToFrac a)
 
 -- | Set the size of the window and the resolution.
-setBoundingBox :: MonadHolz m => Box V2 Float -> m ()
+setBoundingBox :: (MonadHolz r m, HasWindow r) => Box V2 Float -> m ()
 setBoundingBox box@(Box (V2 x0 y0) (V2 x1 y1)) = do
-  w <- ask
+  w <- askWindow
   liftIO $ GLFW.setWindowSize (theWindow w) (floor (x1 - x0)) (floor (y1 - y0))
   liftIO $ writeIORef (refRegion w) box
 
-getBoundingBox :: MonadHolz m => m (Box V2 Float)
-getBoundingBox = ask >>= \w -> liftIO $ readIORef (refRegion w)
+getBoundingBox :: (MonadHolz r m, HasWindow r) => m (Box V2 Float)
+getBoundingBox = askWindow >>= \w -> liftIO $ readIORef (refRegion w)
 
 -- | Take a screenshot of the window.
-takeScreenshot :: MonadHolz m => m (Image PixelRGBA8)
-takeScreenshot = ask >>= \win -> liftIO $ do
+takeScreenshot :: (MonadHolz r m, HasWindow r) => m (Image PixelRGBA8)
+takeScreenshot = askWindow >>= \win -> liftIO $ do
   V2 w h <- fmap floor <$> view (Box.size zero) <$> readIORef (refRegion win)
   mv <- MV.unsafeNew $ w * h * 4 :: IO (MV.IOVector Word8)
   mv' <- MV.unsafeNew $ w * h * 4
@@ -394,8 +261,8 @@ takeScreenshot = ask >>= \win -> liftIO $ do
   Image w h <$> V.unsafeFreeze mv'
 
 -- | Set the window title.
-setTitle :: MonadHolz m => String -> m ()
-setTitle str = ask >>= \w -> liftIO $ GLFW.setWindowTitle (theWindow w) str
+setTitle :: (MonadHolz r m, HasWindow r) => String -> m ()
+setTitle str = askWindow >>= \w -> liftIO $ GLFW.setWindowTitle (theWindow w) str
 
 keyCallback :: IORef ([Key], [Key]) -> IORef (Chatter Key -> IO ()) -> GLFW.KeyCallback
 keyCallback ref h _ k _ st _ = do
@@ -425,19 +292,19 @@ scrollCallback h _ x y = do
   m <- readIORef h
   m $ fmap realToFrac $ V2 x y
 
-keyPress :: MonadHolz m => Key -> m Bool
-keyPress k = ask >>= \w -> liftIO $ fmap (/=GLFW.KeyState'Released)
+keyPress :: (MonadHolz r m, HasWindow r) => Key -> m Bool
+keyPress k = askWindow >>= \w -> liftIO $ fmap (/=GLFW.KeyState'Released)
   $ GLFW.getKey (theWindow w) (toEnum . fromEnum $ k)
 
-mousePress :: MonadHolz m => Int -> m Bool
-mousePress k = ask >>= \w -> liftIO $ fmap (/=GLFW.MouseButtonState'Released)
+mousePress :: (MonadHolz r m, HasWindow r) => Int -> m Bool
+mousePress k = askWindow >>= \w -> liftIO $ fmap (/=GLFW.MouseButtonState'Released)
   $ GLFW.getMouseButton (theWindow w) (toEnum k)
 
-typedString :: MonadHolz m => m String
-typedString = ask >>= \w -> liftIO $ fst <$> readIORef (charactersTyped w)
+typedString :: (MonadHolz r m, HasWindow r) => m String
+typedString = askWindow >>= \w -> liftIO $ fst <$> readIORef (charactersTyped w)
 
-typedKeys :: MonadHolz m => m [Key]
-typedKeys = ask >>= \w -> liftIO $ fst <$> readIORef (keysTyped w)
+typedKeys :: (MonadHolz r m, HasWindow r) => m [Key]
+typedKeys = askWindow >>= \w -> liftIO $ fst <$> readIORef (keysTyped w)
 
 transformPos :: Window -> V2 Double -> IO (V2 Float)
 transformPos w v = do
@@ -445,11 +312,7 @@ transformPos w v = do
   siz' <- view (Box.size zero) <$> readIORef (refRegion w)
   return $! (\p s t -> realToFrac p / fromIntegral s * t) <$> v <*> siz <*> siz'
 
-getCursorPos :: MonadHolz m => m (V2 Float)
-getCursorPos = ask >>= \w -> liftIO $ do
+getCursorPos :: (MonadHolz r m, HasWindow r) => m (V2 Float)
+getCursorPos = askWindow >>= \w -> liftIO $ do
   pos <- uncurry V2 <$> GLFW.getCursorPos (theWindow w)
   transformPos w $! pos
-
-overPtr :: (Storable a) => (Ptr a -> IO b) -> IO a
-overPtr f = alloca $ \p -> f p >> peek p
-{-# INLINE overPtr #-}
