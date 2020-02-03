@@ -44,7 +44,7 @@ data WriterState = WriterState
   { font :: Font
   , _toDraw :: [(V2 Float, Texture, VertexBuffer Vertex)]
   , _offset :: !(V2 Float)
-  , _cache :: !(Map.Map (Float, Char, V4 Float) (Texture, VertexBuffer Vertex, V2 Float)) }
+  , _cache :: !(Map.Map (Int, Char, V4 Float) (Texture, VertexBuffer Vertex, V2 Float)) }
 makeLenses ''WriterState
 
 -- | A 'Renderer' handles 'Writing' operations.
@@ -59,7 +59,7 @@ type Writing r = StateT WriterState (ReaderT r IO)
 
 -- | Render a 'String'.
 -- The left edge of the baseline will be at @mat !* V4 0 0 0 1@.
-simpleL :: HasSimpleShader r => Float -- Size
+simpleL :: HasSimpleShader r => Int -- Size
   -> V4 Float -- ^ Color (RGBA)
   -> String -- String
   -> M44 Float -- Matrix
@@ -71,7 +71,7 @@ simpleL s col str m = do
 
 -- | Draw a 'String', right-aligned.
 -- The right edge of the baseline will be at @mat !* V4 0 0 0 1@.
-simpleR :: HasSimpleShader r => Float -> V4 Float -> String -> M44 Float -> Writing r ()
+simpleR :: HasSimpleShader r => Int -> V4 Float -> String -> M44 Float -> Writing r ()
 simpleR s col str m = do
   string s col str
   V2 x y <- getOffset
@@ -92,7 +92,7 @@ clear = do
   offset .= V2 0 0
 
 -- | Type one character.
-char :: HasSimpleShader r => Float -> V4 Float -> Char -> Writing r ()
+char :: HasSimpleShader r => Int -> V4 Float -> Char -> Writing r ()
 char s col ch = do
   ws <- get
   (tex, buf, adv) <- preuse (cache . ix (s, ch, col)) >>= \case
@@ -109,7 +109,7 @@ char s col ch = do
   offset .= pos + adv
 
 -- | Write a string.
-string :: HasSimpleShader r => Float -> V4 Float -> String -> Writing r ()
+string :: HasSimpleShader r => Int -> V4 Float -> String -> Writing r ()
 string s col = mapM_ (char s col)
 
 -- | Get the current position of writing.

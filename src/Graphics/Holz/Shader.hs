@@ -27,6 +27,8 @@ module Graphics.Holz.Shader
   , registerTextures
   , registerTexture
   , releaseTexture
+  , HasPixelFormat(..)
+  , writeTexture
   , withTexture
   , Shader(..)
   , HasShader(..)
@@ -250,7 +252,7 @@ instance Ord (VertexBuffer v) where
 newtype Texture = Texture GLuint deriving (Eq, Ord)
 
 -- | Send an image into the graphics driver.
-registerTexture :: MonadIO m => Image PixelRGBA8 -> m Texture
+registerTexture :: (HasPixelFormat pixel, MonadIO m) => Image pixel -> m Texture
 registerTexture img@(Image w h _) = registerTextures (V2 w h) [(V2 0 0, img)]
 
 -- | A blank texture.
@@ -263,11 +265,11 @@ blankTexture = unsafePerformIO $ do
 {-# NOINLINE blankTexture #-}
 
 -- | Send a set of images into the graphics driver.
-registerTextures :: MonadIO m => V2 Int -> [(V2 Int, Image PixelRGBA8)] -> m Texture
+registerTextures :: (HasPixelFormat pixel, MonadIO m) => V2 Int -> [(V2 Int, Image pixel)] -> m Texture
 registerTextures (V2 sw sh) imgs = liftIO $ do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
-  glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR_MIPMAP_LINEAR
+  glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_LINEAR
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_S GL_CLAMP_TO_EDGE
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_WRAP_T GL_CLAMP_TO_EDGE
@@ -283,16 +285,29 @@ registerTextures (V2 sw sh) imgs = liftIO $ do
 
   glTexStorage2D GL_TEXTURE_2D level GL_RGBA8 (fromIntegral sw) (fromIntegral sh)
 
-  -- when gl_EXT_texture_filter_anisotropic
-  --  $ glTexParameterf GL_TEXTURE_2D GL_TEXTURE_MAX_ANISOTROPY_EXT 8
-
-  forM_ imgs $ \(V2 x y, Image w h vec) -> V.unsafeWith vec
-    $ glTexSubImage2D GL_TEXTURE_2D 0 (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h) GL_RGBA GL_UNSIGNED_BYTE
-    . castPtr
-
-  glGenerateMipmap GL_TEXTURE_2D
+  forM_ imgs $ \(pos, img) -> writeTexture (Texture tex) pos img
 
   return $ Texture tex
+
+class Storable (PixelBaseComponent pixel) => HasPixelFormat pixel where
+  getGLPixelFormat :: GLenum
+  getGLPixelType :: GLenum
+
+instance HasPixelFormat Pixel8 where
+  getGLPixelFormat = GL_LUMINANCE_ALPHA
+  getGLPixelType = GL_UNSIGNED_BYTE
+
+instance HasPixelFormat PixelRGBA8 where
+  getGLPixelFormat = GL_RGBA
+  getGLPixelType = GL_UNSIGNED_BYTE
+
+writeTexture :: forall m pixel. (HasPixelFormat pixel, MonadIO m) => Texture -> V2 Int -> Image pixel -> m ()
+writeTexture (Texture tex) (V2 x y) (Image w h vec) = liftIO $ do
+  glBindTexture GL_TEXTURE_2D tex
+  V.unsafeWith vec
+    $ glTexSubImage2D GL_TEXTURE_2D 0 (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)
+      (getGLPixelFormat @pixel) (getGLPixelType @pixel)
+    . castPtr
 
 releaseTexture :: MonadIO m => Texture -> m ()
 releaseTexture (Texture i) = liftIO $ with i $ glDeleteTextures 1

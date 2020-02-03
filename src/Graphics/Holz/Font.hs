@@ -56,9 +56,12 @@ freeType = unsafePerformIO $ alloca $ \p -> do
   peek p
 
 -- | Render a character. It also returns the offset and advance.
-renderChar :: MonadIO m => Font -> Float -> Char -> m (Image PixelRGBA8, V2 Float, V2 Float)
+renderChar :: MonadIO m => Font
+  -> Int -- ^ size in pixels
+  -> Char
+  -> m (Image Pixel8, V2 Float, V2 Float)
 renderChar (Font face) pixel ch = liftIO $ do
-  runFreeType $ ft_Set_Pixel_Sizes face 0 (floor pixel)
+  runFreeType $ ft_Set_Pixel_Sizes face 0 $ fromIntegral pixel
 
   runFreeType $ ft_Load_Char face (fromIntegral $ fromEnum ch) ft_LOAD_RENDER
 
@@ -74,13 +77,6 @@ renderChar (Font face) pixel ch = liftIO $ do
   fptr <- newForeignPtr_ $ castPtr $ buffer bmp
 
   adv <- peek $ GS.advance slot
-  let b = fromColorAndOpacity (PixelRGB8 255 255 255)
-        $ Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
-  return (b
+  return (Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
     , V2 left (-top)
     , V2 (fromIntegral (V.x adv) / 64) 0)
-
-fromColorAndOpacity :: PixelRGB8 -> Image Pixel8 -> Image PixelRGBA8
-fromColorAndOpacity (PixelRGB8 r g b) (Image w h vec) = generateImage pix w h where
-  pix i j = PixelRGBA8 r g b $ V.unsafeIndex vec $ i + j * w
-  {-# INLINE pix #-}
