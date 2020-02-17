@@ -17,6 +17,7 @@ module Graphics.Holz.Font
 
 import Control.Monad.IO.Class
 import Control.Monad
+import qualified Data.ByteString.Internal as B
 import qualified Data.Vector.Storable as V
 import Linear
 import Graphics.Rendering.FreeType.Internal
@@ -74,9 +75,12 @@ renderChar (Font face) pixel ch = liftIO $ do
   let h = fromIntegral $ B.rows bmp
       w = fromIntegral $ B.width bmp
 
-  fptr <- newForeignPtr_ $ castPtr $ buffer bmp
+  fptr <- B.mallocByteString (h * w)
+  withForeignPtr fptr $ \ptr -> B.memcpy ptr (castPtr (buffer bmp)) (h * w)
+
+  let img = Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
 
   adv <- peek $ GS.advance slot
-  return (Image w h $ V.unsafeFromForeignPtr0 fptr $ h * w
+  return (img
     , V2 left (-top)
     , V2 (fromIntegral (V.x adv) / 64) 0)

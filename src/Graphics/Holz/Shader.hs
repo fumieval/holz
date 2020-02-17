@@ -21,8 +21,10 @@ module Graphics.Holz.Shader
   , releaseVertex
   , withVertex
   , drawVertexBuffer
+  , GVertex(..)
   -- * Texture
   , Texture
+  , createEmptyTexture
   , blankTexture
   , registerTextures
   , registerTexture
@@ -264,9 +266,8 @@ blankTexture = unsafePerformIO $ do
   return $ Texture tex
 {-# NOINLINE blankTexture #-}
 
--- | Send a set of images into the graphics driver.
-registerTextures :: (HasPixelFormat pixel, MonadIO m) => V2 Int -> [(V2 Int, Image pixel)] -> m Texture
-registerTextures (V2 sw sh) imgs = liftIO $ do
+createEmptyTexture :: MonadIO m => V2 Int -> m Texture
+createEmptyTexture (V2 sw sh) = liftIO $ do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
   glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_LINEAR
@@ -282,19 +283,22 @@ registerTextures (V2 sw sh) imgs = liftIO $ do
   glPixelStorei GL_UNPACK_SKIP_ROWS 0
   glPixelStorei GL_UNPACK_SWAP_BYTES 0
   let level = floor $ logBase (2 :: Float) $ fromIntegral (max sw sh)
-
   glTexStorage2D GL_TEXTURE_2D level GL_RGBA8 (fromIntegral sw) (fromIntegral sh)
+  pure (Texture tex)
 
-  forM_ imgs $ \(pos, img) -> writeTexture (Texture tex) pos img
-
-  return $ Texture tex
+-- | Send a set of images into the graphics driver.
+registerTextures :: (HasPixelFormat pixel, MonadIO m) => V2 Int -> [(V2 Int, Image pixel)] -> m Texture
+registerTextures siz imgs = liftIO $ do
+  tex <- createEmptyTexture siz
+  forM_ imgs $ \(pos, img) -> writeTexture tex pos img
+  return tex
 
 class Storable (PixelBaseComponent pixel) => HasPixelFormat pixel where
   getGLPixelFormat :: GLenum
   getGLPixelType :: GLenum
 
 instance HasPixelFormat Pixel8 where
-  getGLPixelFormat = GL_LUMINANCE_ALPHA
+  getGLPixelFormat = GL_RED -- FIXME
   getGLPixelType = GL_UNSIGNED_BYTE
 
 instance HasPixelFormat PixelRGBA8 where
@@ -304,6 +308,14 @@ instance HasPixelFormat PixelRGBA8 where
 writeTexture :: forall m pixel. (HasPixelFormat pixel, MonadIO m) => Texture -> V2 Int -> Image pixel -> m ()
 writeTexture (Texture tex) (V2 x y) (Image w h vec) = liftIO $ do
   glBindTexture GL_TEXTURE_2D tex
+  glPixelStorei GL_UNPACK_ALIGNMENT 1
+  glPixelStorei GL_UNPACK_IMAGE_HEIGHT 0
+  glPixelStorei GL_UNPACK_LSB_FIRST 0
+  glPixelStorei GL_UNPACK_ROW_LENGTH 0
+  glPixelStorei GL_UNPACK_SKIP_IMAGES 0
+  glPixelStorei GL_UNPACK_SKIP_PIXELS 0
+  glPixelStorei GL_UNPACK_SKIP_ROWS 0
+  glPixelStorei GL_UNPACK_SWAP_BYTES 0
   V.unsafeWith vec
     $ glTexSubImage2D GL_TEXTURE_2D 0 (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)
       (getGLPixelFormat @pixel) (getGLPixelType @pixel)

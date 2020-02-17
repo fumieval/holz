@@ -21,6 +21,7 @@ library
     , Graphics.Holz.Shader.Simple
     , Graphics.Holz.Shader
     , Graphics.Holz.System
+    , Graphics.Holz.Typeset
     , Graphics.Holz.Input
     , Graphics.Holz.Font
     , Graphics.Holz

@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE TypeApplications #-}
@@ -34,6 +35,7 @@ module Graphics.Holz.Shader.Simple
   , makeDefaultShader
   , setOrthographic
   , setProjection
+  , HasModel(..)
   , ModelProj(..)
   , Fragment(..)
   , HasSimpleShader
@@ -55,7 +57,7 @@ data Vertex = Vertex
     { vPosition :: {-# UNPACK #-} !(V3 Float) -- x, y, z
     , vRGBA :: {-# UNPACK #-} !(V4 Float) -- r, g, b, a
     , vUV :: {-# UNPACK #-} !(V2 Float) -- u, v
-    } deriving Generic
+    } deriving (Show, Generic)
     deriving Storable via (StorableVertex Vertex)
 
 rectangle :: V4 Float -> V2 Float -> V2 Float -> (PrimitiveMode, V.Vector Vertex)
@@ -106,6 +108,12 @@ data ModelProj h = ModelProj
   { mpProjection :: h (M44 Float)
   , mpModel :: h (M44 Float)
   } deriving Generic
+
+class HasModel r where
+  getModelVar :: r -> UniformVar (M44 Float)
+
+instance HasModel (ModelProj UniformVar) where
+  getModelVar = mpModel
 
 data Fragment = Fragment
   { fTexUV :: V2 Float
