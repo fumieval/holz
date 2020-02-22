@@ -42,9 +42,9 @@ import Control.Monad.Trans.State.Strict
 
 data WriterState = WriterState
   { font :: Font
-  , _toDraw :: [(V2 Float, Texture, VertexBuffer Vertex)]
+  , _toDraw :: [(V2 Float, Texture Pixel8, VertexBuffer Vertex)]
   , _offset :: !(V2 Float)
-  , _cache :: !(Map.Map (Int, Char, V4 Float) (Texture, VertexBuffer Vertex, V2 Float)) }
+  , _cache :: !(Map.Map (Int, Char, V4 Float) (Texture Pixel8, VertexBuffer Vertex, V2 Float)) }
 makeLenses ''WriterState
 
 -- | A 'Renderer' handles 'Writing' operations.

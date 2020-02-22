@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -203,7 +204,7 @@ instance (GVertex f, GVertex g) => GVertex (f :*: g) where
   gsizeVertex = gsizeVertex @ f + gsizeVertex @ g
 
 -- | Send vertices to the graphics driver.
-registerVertex :: forall m v. (Generic v, GVertex (Rep v), Storable v, MonadIO m)
+registerVertex :: forall m v. (IsVertex v, MonadIO m)
   => PrimitiveMode -> V.Vector v -> m (VertexBuffer v)
 registerVertex mode va = liftIO $ do
   vao <- overPtr $ glGenVertexArrays 1
@@ -221,11 +222,11 @@ releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
   with vao $ glDeleteVertexArrays 1
   with vbo $ glDeleteBuffers 1
 
-withVertex :: (Generic v, GVertex (Rep v), Storable v, MonadUnliftIO m) => PrimitiveMode -> V.Vector v -> (VertexBuffer v -> m r) -> m r
+withVertex :: (IsVertex v, MonadUnliftIO m) => PrimitiveMode -> V.Vector v -> (VertexBuffer v -> m r) -> m r
 withVertex m v = bracket (registerVertex m v) releaseVertex
 
 -- | Draw 'VertexBuffer' using the w 'Texture' and a model matrix.
-drawVertexBuffer :: MonadIO m => Texture -> VertexBuffer v -> m ()
+drawVertexBuffer :: MonadIO m => Texture p -> VertexBuffer v -> m ()
 drawVertexBuffer (Texture tex) (VertexBuffer vao vbo m n) = liftIO $ do
   glBindTexture GL_TEXTURE_2D tex
   glBindVertexArray vao
@@ -251,14 +252,14 @@ instance Eq (VertexBuffer v) where
 instance Ord (VertexBuffer v) where
   VertexBuffer i _ _ _ `compare` VertexBuffer j _ _ _ = compare i j
 
-newtype Texture = Texture GLuint deriving (Eq, Ord)
+newtype Texture pixel = Texture GLuint deriving (Eq, Ord)
 
 -- | Send an image into the graphics driver.
-registerTexture :: (HasPixelFormat pixel, MonadIO m) => Image pixel -> m Texture
+registerTexture :: (HasPixelFormat pixel, MonadIO m) => Image pixel -> m (Texture pixel)
 registerTexture img@(Image w h _) = registerTextures (V2 w h) [(V2 0 0, img)]
 
 -- | A blank texture.
-blankTexture :: Texture
+blankTexture :: Texture Pixel8
 blankTexture = unsafePerformIO $ do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
@@ -266,7 +267,7 @@ blankTexture = unsafePerformIO $ do
   return $ Texture tex
 {-# NOINLINE blankTexture #-}
 
-createEmptyTexture :: MonadIO m => V2 Int -> m Texture
+createEmptyTexture :: forall m pixel. (HasPixelFormat pixel, MonadIO m) => V2 Int -> m (Texture pixel)
 createEmptyTexture (V2 sw sh) = liftIO $ do
   tex <- overPtr (glGenTextures 1)
   glBindTexture GL_TEXTURE_2D tex
@@ -283,29 +284,35 @@ createEmptyTexture (V2 sw sh) = liftIO $ do
   glPixelStorei GL_UNPACK_SKIP_ROWS 0
   glPixelStorei GL_UNPACK_SWAP_BYTES 0
   let level = floor $ logBase (2 :: Float) $ fromIntegral (max sw sh)
-  glTexStorage2D GL_TEXTURE_2D level GL_RGBA8 (fromIntegral sw) (fromIntegral sh)
+  glTexStorage2D GL_TEXTURE_2D level (getGLPixelInternalFormat @ pixel) (fromIntegral sw) (fromIntegral sh)
   pure (Texture tex)
 
 -- | Send a set of images into the graphics driver.
-registerTextures :: (HasPixelFormat pixel, MonadIO m) => V2 Int -> [(V2 Int, Image pixel)] -> m Texture
+registerTextures :: (HasPixelFormat pixel, MonadIO m) => V2 Int -> [(V2 Int, Image pixel)] -> m (Texture pixel)
 registerTextures siz imgs = liftIO $ do
   tex <- createEmptyTexture siz
   forM_ imgs $ \(pos, img) -> writeTexture tex pos img
   return tex
 
 class Storable (PixelBaseComponent pixel) => HasPixelFormat pixel where
+  getGLPixelInternalFormat :: GLenum
+  getGLPixelSwizzle :: [GLint]
   getGLPixelFormat :: GLenum
   getGLPixelType :: GLenum
 
 instance HasPixelFormat Pixel8 where
-  getGLPixelFormat = GL_RED -- FIXME
+  getGLPixelInternalFormat = GL_RGBA8
+  getGLPixelSwizzle = [GL_ONE, GL_ONE, GL_ONE, GL_RED]
+  getGLPixelFormat = GL_RED
   getGLPixelType = GL_UNSIGNED_BYTE
 
 instance HasPixelFormat PixelRGBA8 where
+  getGLPixelInternalFormat = GL_RGBA8
+  getGLPixelSwizzle = [GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA]
   getGLPixelFormat = GL_RGBA
   getGLPixelType = GL_UNSIGNED_BYTE
 
-writeTexture :: forall m pixel. (HasPixelFormat pixel, MonadIO m) => Texture -> V2 Int -> Image pixel -> m ()
+writeTexture :: forall m pixel. (HasPixelFormat pixel, MonadIO m) => Texture pixel -> V2 Int -> Image pixel -> m ()
 writeTexture (Texture tex) (V2 x y) (Image w h vec) = liftIO $ do
   glBindTexture GL_TEXTURE_2D tex
   glPixelStorei GL_UNPACK_ALIGNMENT 1
@@ -316,15 +323,16 @@ writeTexture (Texture tex) (V2 x y) (Image w h vec) = liftIO $ do
   glPixelStorei GL_UNPACK_SKIP_PIXELS 0
   glPixelStorei GL_UNPACK_SKIP_ROWS 0
   glPixelStorei GL_UNPACK_SWAP_BYTES 0
+  withArray (getGLPixelSwizzle @pixel) $ glTexParameteriv GL_TEXTURE_2D GL_TEXTURE_SWIZZLE_RGBA
   V.unsafeWith vec
     $ glTexSubImage2D GL_TEXTURE_2D 0 (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)
       (getGLPixelFormat @pixel) (getGLPixelType @pixel)
     . castPtr
 
-releaseTexture :: MonadIO m => Texture -> m ()
+releaseTexture :: MonadIO m => Texture p -> m ()
 releaseTexture (Texture i) = liftIO $ with i $ glDeleteTextures 1
 
-withTexture :: MonadUnliftIO m => Image PixelRGBA8 -> (Texture -> m a) -> m a
+withTexture :: (HasPixelFormat pixel, MonadUnliftIO m) => Image pixel -> (Texture pixel -> m a) -> m a
 withTexture img = bracket (registerTexture img) releaseTexture
 
 compileShader :: BB.Builder -> GLuint -> IO ()
@@ -386,12 +394,13 @@ instance HasShader (Shader u v) where
 newtype VertexShaderSource (uniform :: (* -> *) -> *) vert frag = VertexShaderSource BB.Builder deriving IsString
 newtype FragmentShaderSource (uniform :: (* -> *) -> *) frag = FragmentShaderSource BB.Builder deriving IsString
 
+type IsVertex v = (Generic v, GVertex (Rep v), V.Storable v)
+
 makeShader :: forall uniform vert frag m.
-  ( Generic vert
+  ( IsVertex vert
   , Generic frag
   , Generic (uniform Identity)
   , Generic (uniform UniformVar)
-  , GVertex (Rep vert)
   , GShaderVars (Rep (uniform Identity))
   , GUniformVars (Rep (uniform UniformVar))
   , GShaderVars (Rep vert)

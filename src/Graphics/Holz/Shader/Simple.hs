@@ -14,6 +14,7 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ExistentialQuantification #-}
 ---------------------------------------------------------------------------
 -- |
 -- Copyright   :  (C) 2016 Fumiaki Kinoshita
@@ -29,7 +30,6 @@ module Graphics.Holz.Shader.Simple
   ( Vertex(..)
   , rectangle
   , translate
-  , draw
   , drawVertex
   , drawVertexPlain
   , makeDefaultShader
@@ -41,6 +41,10 @@ module Graphics.Holz.Shader.Simple
   , HasSimpleShader
   , vertexShaderSource
   , fragmentShaderSource
+  , Drawable(..)
+  , draw
+  -- * from Vertex
+  , FromV3RGBAUV(..)
   ) where
 
 import Control.Lens
@@ -60,6 +64,12 @@ data Vertex = Vertex
     } deriving (Show, Generic)
     deriving Storable via (StorableVertex Vertex)
 
+class FromV3RGBAUV v where
+  fromV3RGBAUV :: V3 Float -> V4 Float -> V2 Float -> v
+
+instance FromV3RGBAUV Vertex where
+  fromV3RGBAUV = Vertex
+
 rectangle :: V4 Float -> V2 Float -> V2 Float -> (PrimitiveMode, V.Vector Vertex)
 rectangle col (V2 x0 y0) (V2 x1 y1) = (TriangleStrip, V.fromList
   [ Vertex (V3 x0 y0 0) col (V2 0 0)
@@ -72,20 +82,13 @@ rectangle col (V2 x0 y0) (V2 x1 y1) = (TriangleStrip, V.fromList
 translate :: V3 Float -> M44 Float
 translate v = identity & translation .~ v
 
--- | Draw vertices through the given model matrix.
-draw :: (MonadHolz r m, HasShader r, ShaderUniform r ~ ModelProj) => M44 Float -> (PrimitiveMode, V.Vector Vertex) -> m ()
-draw m (prim, vs) = do
-  buf <- registerVertex prim vs
-  drawVertexPlain m buf
-  releaseVertex buf
-
 type HasSimpleShader r = (HasShader r, ShaderUniform r ~ ModelProj)
 
 -- | Set the projection matrix.
 setProjection :: (MonadHolz r m, HasSimpleShader r) => M44 Float -> m ()
 setProjection = setUniform mpProjection
 
-drawVertex :: (MonadHolz r m, HasShader r, HasSimpleShader r) => M44 Float -> Texture -> VertexBuffer v -> m ()
+drawVertex :: (MonadHolz r m, HasShader r, HasSimpleShader r) => M44 Float -> Texture pixel -> VertexBuffer v -> m ()
 drawVertex mat tex vb = do
   setUniform mpModel mat
   drawVertexBuffer tex vb
@@ -139,3 +142,11 @@ void main(void){
     fragColor = fColor * texture(tex, fTexUV);
 }
 |]
+
+data Drawable = forall p v. Drawable !(Texture p) !(VertexBuffer v)
+
+draw :: forall r m. (HasShader r, HasModel (ShaderUniform r UniformVar), MonadHolz r m) => M44 Float -> Drawable -> m ()
+draw mat (Drawable tex buf) = do
+  setUniform getModelVar mat
+  drawVertexBuffer tex buf 
+{-# INLINE draw #-}
