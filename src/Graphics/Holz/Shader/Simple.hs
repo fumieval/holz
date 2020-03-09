@@ -45,6 +45,7 @@ module Graphics.Holz.Shader.Simple
   , draw
   -- * from Vertex
   , FromV3RGBAUV(..)
+  , RGBA
   ) where
 
 import Control.Lens
@@ -59,18 +60,18 @@ import qualified Text.RawString.QQ as QQ
 
 data Vertex = Vertex
     { vPosition :: {-# UNPACK #-} !(V3 Float) -- x, y, z
-    , vRGBA :: {-# UNPACK #-} !(V4 Float) -- r, g, b, a
+    , vRGBA :: {-# UNPACK #-} !RGBA -- r, g, b, a
     , vUV :: {-# UNPACK #-} !(V2 Float) -- u, v
     } deriving (Show, Generic)
     deriving Storable via (StorableVertex Vertex)
 
 class FromV3RGBAUV v where
-  fromV3RGBAUV :: V3 Float -> V4 Float -> V2 Float -> v
+  fromV3RGBAUV :: V3 Float -> RGBA -> V2 Float -> v
 
 instance FromV3RGBAUV Vertex where
   fromV3RGBAUV = Vertex
 
-rectangle :: V4 Float -> V2 Float -> V2 Float -> (PrimitiveMode, V.Vector Vertex)
+rectangle :: RGBA -> V2 Float -> V2 Float -> (PrimitiveMode, V.Vector Vertex)
 rectangle col (V2 x0 y0) (V2 x1 y1) = (TriangleStrip, V.fromList
   [ Vertex (V3 x0 y0 0) col (V2 0 0)
   , Vertex (V3 x1 y0 0) col (V2 1 0)
@@ -118,9 +119,11 @@ class HasModel r where
 instance HasModel (ModelProj UniformVar) where
   getModelVar = mpModel
 
+type RGBA = V4 Float
+
 data Fragment = Fragment
   { fTexUV :: V2 Float
-  , fColor :: V4 Float
+  , fColor :: RGBA
   , fPos :: V4 Float
   } deriving Generic
 

@@ -17,6 +17,7 @@ import Linear
 import Data.IORef
 import Data.Traversable
 import Codec.Picture.Types
+import UnliftIO.Resource
 
 data Typeset = Typeset
   { font :: !Font
@@ -66,8 +67,13 @@ createGlyph Typeset{..} ch = do
   let glyphSize = fmap fromIntegral $ V2 w h
   return Glyph{..}
 
-stringOn :: forall m. MonadIO m => (V2 Float -> V2 Float) -> Typeset -> V4 Float -> String -> m S.Drawable
-stringOn adjust ts@Typeset{..} color str = liftIO $ do
+stringOn :: forall m. MonadResource m
+  => (V2 Float -> V2 Float)
+  -> Typeset
+  -> S.RGBA
+  -> String
+  -> m S.Drawable
+stringOn adjust ts@Typeset{..} color str = do
   glyphs <- traverse (char ts) str
   let (_, coords) = mapAccumL (\pos@(V2 _ baseY) (ch, g) -> case ch of
         '\n' -> (V2 0 (baseY + fromIntegral size * 1.5), [])
@@ -82,7 +88,7 @@ stringOn adjust ts@Typeset{..} color str = liftIO $ do
               , S.fromV3RGBAUV (conv $ base + V2 0 h) color (V2 u0 v1)
               , S.fromV3RGBAUV (conv $ base + V2 w h) color (V2 u1 v1)
               ])) (V2 0 0) $ zip str glyphs
-  vbuf <- registerVertex Triangles $ V.fromList $ concat coords
+  (_, vbuf) <- registerVertex Triangles $ V.fromList $ concat coords
   pure $ S.Drawable atlas (vbuf :: VertexBuffer S.Vertex)
 
 genStrip :: [a] -> [a]

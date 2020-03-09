@@ -17,8 +17,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Graphics.Holz.Text
-    , Graphics.Holz.Shader.Simple
+  exposed-modules:
+    Graphics.Holz.Shader.Simple
     , Graphics.Holz.Shader
     , Graphics.Holz.System
     , Graphics.Holz.Typeset
@@ -39,6 +39,7 @@ library
       , GLFW-b
       , hashable
       , JuicyPixels
+      , resourcet
       , lens
       , linear
       , mtl

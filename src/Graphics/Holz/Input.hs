@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
+{-# LANGUAGE DeriveFunctor, DeriveFoldable, DeriveTraversable #-}
 ---------------------------------------------------------------------------
 -- |
 -- Copyright   :  (C) 2016 Fumiaki Kinoshita
@@ -11,18 +11,17 @@
 -- Input event types
 ---------------------------------------------------------------------------
 module Graphics.Holz.Input where
-import Data.Typeable
 import Data.Char
 
 -- | Something being pressed, or released
-data Chatter a = Up a | Down a deriving (Show, Eq, Ord, Read, Typeable, Functor, Foldable, Traversable)
+data Chatter a = Up a | Down a deriving (Show, Eq, Ord, Read, Functor, Foldable, Traversable)
 
-data Gamepad = Gamepad Int String deriving (Show, Eq, Ord, Read, Typeable)
+data Gamepad = Gamepad Int String deriving (Show, Eq, Ord, Read)
 
 data GamepadEvent = PadButton Gamepad (Chatter Int)
   | PadAxis Gamepad Int Float
   | PadConnection (Chatter Gamepad)
-  deriving (Show, Eq, Ord, Read, Typeable)
+  deriving (Show, Eq, Ord, Read)
 
 data Key =
       KeyUnknown
@@ -146,7 +145,7 @@ data Key =
     | KeyRightAlt
     | KeyRightSuper
     | KeyMenu
-    deriving (Enum, Eq, Ord, Read, Show, Typeable, Bounded)
+    deriving (Enum, Eq, Ord, Read, Show, Bounded)
 
 -- | Get a 'Key' corresponding to a character.
 charToKey :: Char -> Key

@@ -5,7 +5,6 @@
 import Graphics.Holz
 import Control.Monad
 import Linear
-import Graphics.Holz.Shader
 import qualified Graphics.Holz.Shader.Simple as S
 import Data.Function (fix)
 import qualified Text.RawString.QQ as QQ
@@ -33,7 +32,7 @@ main = withHolz $ do
   sh <- makeShader vertexShaderSource fragmentShaderSource
   void $ flip runReaderT (WindowAndShader win sh) $ do
     vb <- uncurry registerVertex $ S.rectangle (pure 1) (V2 (-1) (-1)) (V2 1 1)
-    retract $ runHolz $ flip fix 0 $ \self t -> do
+    retract $ runHolz $ flip fix (0 :: Int) $ \self t -> do
       pos <- getCursorPos
       setUniform mouse pos
       setUniform time (fromIntegral t / 100)

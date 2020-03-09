@@ -19,8 +19,6 @@ module Graphics.Holz.Shader
    VertexBuffer
   , PrimitiveMode(..)
   , registerVertex
-  , releaseVertex
-  , withVertex
   , drawVertexBuffer
   , GVertex(..)
   -- * Texture
@@ -74,6 +72,7 @@ import Foreign.Marshal.Array
 import Foreign.Marshal.Alloc (alloca)
 import System.IO.Unsafe
 import UnliftIO (MonadUnliftIO, bracket)
+import UnliftIO.Resource
 
 newtype UniformVar a = UniformVar GLint
 
@@ -204,9 +203,9 @@ instance (GVertex f, GVertex g) => GVertex (f :*: g) where
   gsizeVertex = gsizeVertex @ f + gsizeVertex @ g
 
 -- | Send vertices to the graphics driver.
-registerVertex :: forall m v. (IsVertex v, MonadIO m)
-  => PrimitiveMode -> V.Vector v -> m (VertexBuffer v)
-registerVertex mode va = liftIO $ do
+registerVertex :: forall m v. (IsVertex v, MonadResource m)
+  => PrimitiveMode -> V.Vector v -> m (ReleaseKey, VertexBuffer v)
+registerVertex mode va = allocate (do
   vao <- overPtr $ glGenVertexArrays 1
   glBindVertexArray vao
   vbo <- overPtr $ glGenBuffers 1
@@ -214,16 +213,10 @@ registerVertex mode va = liftIO $ do
   vertexAttributes @ v
   let siz = fromIntegral $ V.length va * sizeOf (undefined :: v)
   V.unsafeWith va $ \v -> glBufferData GL_ARRAY_BUFFER siz (castPtr v) GL_STATIC_DRAW
-  return $! VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length va)
-
--- | Release a 'VertexBuffer'. The 'VertexBuffer' can't be used after this.
-releaseVertex :: MonadIO m => VertexBuffer v -> m ()
-releaseVertex (VertexBuffer vao vbo _ _) = liftIO $ do
-  with vao $ glDeleteVertexArrays 1
-  with vbo $ glDeleteBuffers 1
-
-withVertex :: (IsVertex v, MonadUnliftIO m) => PrimitiveMode -> V.Vector v -> (VertexBuffer v -> m r) -> m r
-withVertex m v = bracket (registerVertex m v) releaseVertex
+  return $! VertexBuffer vao vbo (convPrimitiveMode mode) (fromIntegral $ V.length va))
+  $ \(VertexBuffer vao vbo _ _) -> do
+    with vao $ glDeleteVertexArrays 1
+    with vbo $ glDeleteBuffers 1
 
 -- | Draw 'VertexBuffer' using the w 'Texture' and a model matrix.
 drawVertexBuffer :: MonadIO m => Texture p -> VertexBuffer v -> m ()
