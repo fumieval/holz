@@ -29,6 +29,7 @@
 module Graphics.Holz.Shader.Simple
   ( Vertex(..)
   , rectangle
+  , rectangleUV
   , translate
   , drawVertex
   , drawVertexPlain
@@ -72,11 +73,19 @@ instance FromV3RGBAUV Vertex where
   fromV3RGBAUV = Vertex
 
 rectangle :: RGBA -> V2 Float -> V2 Float -> (PrimitiveMode, V.Vector Vertex)
-rectangle col (V2 x0 y0) (V2 x1 y1) = (TriangleStrip, V.fromList
-  [ Vertex (V3 x0 y0 0) col (V2 0 0)
-  , Vertex (V3 x1 y0 0) col (V2 1 0)
-  , Vertex (V3 x0 y1 0) col (V2 0 1)
-  , Vertex (V3 x1 y1 0) col (V2 1 1)
+rectangle col p q = rectangleUV col p 0 q 1
+
+rectangleUV :: RGBA
+  -> V2 Float -- ^ x0, y0
+  -> V2 Float -- ^ u0, v0
+  -> V2 Float -- ^ x1, y1
+  -> V2 Float -- ^ u1, v1
+  -> (PrimitiveMode, V.Vector Vertex)
+rectangleUV col (V2 x0 y0) (V2 u0 v0) (V2 x1 y1) (V2 u1 v1) = (TriangleStrip, V.fromList
+  [ Vertex (V3 x0 y0 0) col (V2 u0 v0)
+  , Vertex (V3 x1 y0 0) col (V2 u1 v0)
+  , Vertex (V3 x0 y1 0) col (V2 u0 v1)
+  , Vertex (V3 x1 y1 0) col (V2 u1 v1)
   ])
 
 -- | Make a translation matrix.
